@@ -19,6 +19,13 @@ describe('GitHubConnector', () => {
     connector = new GitHubConnector(mockOctokit as any);
   });
 
+  it('constructor should throw when constructed without token or Octokit', () => {
+    // @ts-expect-error runtime test
+    expect(() => new GitHubConnector(undefined)).toThrow(
+      'Octokit instance or token string is required.',
+    );
+  });
+
   describe('getUserLogin', () => {
     it('should return authenticated user login', async () => {
       mockOctokit.rest.users.getAuthenticated.mockResolvedValue({
@@ -113,23 +120,28 @@ describe('GitHubConnector', () => {
 
       // Should include 4 items now (3 from GraphQL + 1 from events)
       expect(contributions).toHaveLength(4);
-      expect(contributions[0]).toMatchObject({
-        type: 'commit',
-        timestamp: '2025-01-15T10:00:00Z',
-        url: 'https://github.com/test/repo/commit/abc123',
-      });
-      expect(contributions[1]).toMatchObject({
-        type: 'pr',
-        timestamp: '2025-01-16T14:30:00Z',
-        text: 'Add new feature',
-        url: 'https://github.com/test/repo/pull/1',
-      });
-      expect(contributions[2]).toMatchObject({
-        type: 'review',
-        timestamp: '2025-01-17T09:00:00Z',
-        text: 'review',
-        url: 'https://github.com/test/repo/pull/2#review',
-      });
+
+      expect(contributions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'commit',
+            timestamp: '2025-01-15T10:00:00Z',
+            url: 'https://github.com/test/repo/commit/abc123',
+          }),
+          expect.objectContaining({
+            type: 'pr',
+            timestamp: '2025-01-16T14:30:00Z',
+            text: 'Add new feature',
+            url: 'https://github.com/test/repo/pull/1',
+          }),
+          expect.objectContaining({
+            type: 'review',
+            timestamp: '2025-01-17T09:00:00Z',
+            text: 'review',
+            url: 'https://github.com/test/repo/pull/2#review',
+          }),
+        ]),
+      );
 
       // The event-derived commit should be present
       const eventCommit = contributions.find((c) => c.url?.includes('def456'));
@@ -203,6 +215,64 @@ describe('GitHubConnector', () => {
 
       const contributions = await connector.fetchContributions(from, to);
       expect(contributions).toHaveLength(0);
+    });
+
+    it('handles events where payload.commits is missing gracefully', async () => {
+      mockOctokit.rest.users.getAuthenticated.mockResolvedValue({ data: { login: 'testuser' } });
+
+      const graphqlResp = {
+        data: {
+          data: {
+            user: {
+              contributionsCollection: {
+                commitContributionsByRepository: [],
+                pullRequestContributions: { nodes: [] },
+                pullRequestReviewContributions: { nodes: [] },
+              },
+            },
+          },
+        },
+      };
+
+      const eventsResp = {
+        data: [
+          {
+            id: '2',
+            type: 'PushEvent',
+            repo: { name: 'test/repo' },
+            payload: {
+              ref: 'refs/heads/main',
+              // commits missing
+            },
+            created_at: '2025-01-20T12:00:00Z',
+          },
+        ],
+      };
+
+      mockOctokit.request.mockResolvedValueOnce(graphqlResp).mockResolvedValueOnce(eventsResp);
+
+      const contributions = await connector.fetchContributions(from, to);
+      expect(Array.isArray(contributions)).toBe(true);
+      expect(contributions).toHaveLength(0);
+    });
+  });
+
+  describe('createGitHubConnector', () => {
+    it('should throw when token is missing', () => {
+      expect(() => createGitHubConnector(undefined)).toThrow(
+        'GH_TOKEN environment variable is missing',
+      );
+    });
+
+    it('should throw when token is empty string', () => {
+      expect(() => createGitHubConnector('')).toThrow(
+        'A non-empty GitHub token string is required',
+      );
+    });
+
+    it('should create connector when valid token is provided', () => {
+      const connector = createGitHubConnector('valid-token');
+      expect(connector).toBeInstanceOf(GitHubConnector);
     });
   });
 });

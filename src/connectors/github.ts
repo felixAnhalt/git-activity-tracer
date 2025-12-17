@@ -2,9 +2,16 @@ import { Octokit } from '@octokit/rest';
 import type { Dayjs } from 'dayjs';
 import type {
   Contribution,
-  ContributionType,
   GraphQLResponse,
   GraphQLErrorResponse,
+  GitHubEvent,
+  GraphQLApiResponse,
+  EventsApiResponse,
+  DateRange,
+  DateRangeTimestamps,
+  GraphQLCommitRepo,
+  GraphQLPRNode,
+  GraphQLReviewNode,
 } from '../types.js';
 
 export type { Contribution, ContributionType } from '../types.js';
@@ -38,6 +45,24 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
   }
 }`;
 
+function isGraphQLErrorResponse(x: unknown): x is GraphQLErrorResponse {
+  return (
+    !!x &&
+    typeof x === 'object' &&
+    'errors' in x &&
+    Array.isArray((x as { errors?: unknown }).errors)
+  );
+}
+
+function extractPayloadFromGraphQLResponse(raw: unknown): GraphQLResponse | null {
+  // Octokit returns { data: { data: { ... } } } for GraphQL queries; handle both shapes
+  if (!raw || typeof raw !== 'object') return null;
+  const asAny = raw as { data?: unknown };
+  const inner = asAny.data ?? raw;
+  if (!inner || typeof inner !== 'object') return null;
+  return inner as GraphQLResponse;
+}
+
 export class GitHubConnector {
   private octokit: Octokit;
 
@@ -46,8 +71,12 @@ export class GitHubConnector {
    */
   constructor(octokitOrToken: Octokit | string) {
     if (typeof octokitOrToken === 'string') {
-      if (!octokitOrToken) throw new Error('A non-empty GitHub token string is required.');
+      if (!octokitOrToken || octokitOrToken.trim() === '') {
+        throw new Error('A non-empty GitHub token string is required.');
+      }
       this.octokit = new Octokit({ auth: octokitOrToken });
+    } else if (!octokitOrToken) {
+      throw new Error('Octokit instance or token string is required.');
     } else {
       this.octokit = octokitOrToken;
     }
@@ -61,131 +90,280 @@ export class GitHubConnector {
     return r.data.login;
   }
 
-  async fetchContributions(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
-    const login = await this.getUserLogin();
-
+  /**
+   * Fetches contribution data from GitHub GraphQL API.
+   * @throws {Error} If API returns errors or no data
+   */
+  private async fetchGraphQLContributions(
+    login: string,
+    dateRange: DateRange,
+  ): Promise<NonNullable<GraphQLResponse['user']>['contributionsCollection']> {
     const variables = {
       login,
-      from: from.toISOString(),
-      to: to.toISOString(),
+      from: dateRange.from,
+      to: dateRange.to,
     };
 
-    let coll;
     try {
-      const res = await this.octokit.request('POST /graphql', { query: QUERY, variables });
+      const response = await this.octokit.request('POST /graphql', {
+        query: QUERY,
+        variables,
+      });
 
-      const maybeError = res.data as unknown as GraphQLErrorResponse;
-      if (maybeError && Array.isArray(maybeError.errors) && maybeError.errors.length > 0) {
-        throw new Error(
-          `GraphQL API returned errors: ${maybeError.errors.map((e) => e.message).join(', ')}`,
-        );
+      const rawData = (response as GraphQLApiResponse).data;
+
+      if (isGraphQLErrorResponse(rawData)) {
+        const messages = (rawData.errors ?? []).map((error) => error.message).join(', ');
+        throw new Error(`GraphQL API returned errors: ${messages}`);
       }
 
-      const data = (res.data as any)?.data as GraphQLResponse | undefined;
-      if (!data?.user?.contributionsCollection) {
+      const payload = extractPayloadFromGraphQLResponse(rawData);
+      if (!payload?.user?.contributionsCollection) {
         throw new Error('No data returned from GitHub GraphQL API');
       }
-      coll = data.user.contributionsCollection;
-    } catch (err) {
-      const e = new Error('Error fetching data from GitHub GraphQL API');
-      (e as any).cause = err;
-      throw e;
-    }
 
-    const contributions: Contribution[] = [];
-    const pushContribution = (item: Contribution) => contributions.push(item);
-
-    // commit contributions
-    for (const repo of coll.commitContributionsByRepository ?? []) {
-      for (const node of repo.contributions?.nodes ?? []) {
-        if (node && typeof node.occurredAt === 'string') {
-          pushContribution({ type: 'commit', timestamp: node.occurredAt, url: node.url });
-        }
-      }
-    }
-
-    // pull requests
-    for (const pr of coll.pullRequestContributions?.nodes ?? []) {
-      if (pr && typeof pr.occurredAt === 'string') {
-        pushContribution({
-          type: 'pr',
-          timestamp: pr.occurredAt,
-          text: pr.pullRequest?.title,
-          url: pr.pullRequest?.url,
+      return payload.user.contributionsCollection;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error('Error fetching data from GitHub GraphQL API: ' + error.message, {
+          cause: error,
         });
       }
+      throw new Error('Error fetching data from GitHub GraphQL API: ' + String(error));
     }
+  }
 
-    // reviews
-    for (const rv of coll.pullRequestReviewContributions?.nodes ?? []) {
-      if (rv && typeof rv.occurredAt === 'string') {
-        pushContribution({
-          type: 'review',
-          timestamp: rv.occurredAt,
-          text: 'review',
-          url: rv.pullRequestReview?.url,
-        });
-      }
-    }
-
-    // Also fetch recent user events to capture direct pushes to base branches
+  /**
+   * Fetches recent user events from GitHub Events API.
+   * Returns empty array on error (best-effort).
+   */
+  private async fetchEventsApiData(login: string): Promise<GitHubEvent[]> {
     try {
-      const eventsRes = await this.octokit.request('GET /users/{username}/events', {
+      const eventsResponse = await this.octokit.request('GET /users/{username}/events', {
         username: login,
         per_page: 100,
       });
 
-      const eventsData = eventsRes.data as any;
-      if (Array.isArray(eventsData)) {
-        const baseRefs = new Set([
-          'refs/heads/main',
-          'refs/heads/master',
-          'refs/heads/development',
-          'refs/heads/develop',
-        ]);
-        for (const ev of eventsData as any[]) {
-          if (!ev || ev.type !== 'PushEvent') continue;
-          const createdAt = ev.created_at;
-          const ref = ev?.payload?.ref;
-          if (typeof createdAt !== 'string' || typeof ref !== 'string') continue;
+      const rawData = (eventsResponse as EventsApiResponse).data;
 
-          const createdTs = Date.parse(createdAt);
-          const fromTs = Date.parse(variables.from);
-          const toTs = Date.parse(variables.to);
-          if (Number.isNaN(createdTs)) continue;
-          if (createdTs < fromTs || createdTs > toTs) continue;
-          if (!baseRefs.has(ref)) continue;
+      if (!Array.isArray(rawData)) {
+        return [];
+      }
 
-          const repoName = typeof ev.repo?.name === 'string' ? ev.repo.name : undefined;
-          for (const commit of ev.payload?.commits ?? []) {
-            const sha = commit?.sha;
-            const message = commit?.message;
-            const url =
-              sha && repoName ? `https://github.com/${repoName}/commit/${sha}` : commit?.url;
-            pushContribution({ type: 'commit', timestamp: createdAt, text: message, url });
-          }
+      return rawData as GitHubEvent[];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /**
+   * Parses ISO date strings to timestamps for efficient range checking.
+   * @throws {Error} If date strings are invalid
+   */
+  private parseDateRangeTimestamps(dateRange: DateRange): DateRangeTimestamps {
+    const fromTimestamp = Date.parse(dateRange.from);
+    const toTimestamp = Date.parse(dateRange.to);
+
+    if (Number.isNaN(fromTimestamp) || Number.isNaN(toTimestamp)) {
+      throw new Error('Invalid date range provided');
+    }
+
+    return { fromTimestamp, toTimestamp };
+  }
+
+  /**
+   * Extracts commit contributions from GraphQL response.
+   */
+  private extractCommitContributions(commitsByRepository: GraphQLCommitRepo[]): Contribution[] {
+    const contributions: Contribution[] = [];
+
+    for (const repository of commitsByRepository) {
+      for (const node of repository.contributions?.nodes ?? []) {
+        if (node && typeof node.occurredAt === 'string') {
+          contributions.push({
+            type: 'commit',
+            timestamp: node.occurredAt,
+            url: node.url,
+          });
         }
       }
-    } catch (err) {
-      // Best-effort: ignore events fetch errors but do not crash the flow.
     }
 
-    // Deduplicate results by type|timestamp|url|text
-    const unique = new Map<string, Contribution>();
-    for (const c of contributions) {
-      const key = `${c.type}|${c.timestamp}|${c.url ?? ''}|${c.text ?? ''}`;
-      if (!unique.has(key)) unique.set(key, c);
+    return contributions;
+  }
+
+  /**
+   * Extracts pull request contributions from GraphQL response.
+   */
+  private extractPullRequestContributions(pullRequestNodes: GraphQLPRNode[]): Contribution[] {
+    const contributions: Contribution[] = [];
+
+    for (const pullRequest of pullRequestNodes) {
+      if (pullRequest && typeof pullRequest.occurredAt === 'string') {
+        contributions.push({
+          type: 'pr',
+          timestamp: pullRequest.occurredAt,
+          text: pullRequest.pullRequest?.title,
+          url: pullRequest.pullRequest?.url,
+        });
+      }
     }
 
-    return Array.from(unique.values());
+    return contributions;
+  }
+
+  /**
+   * Extracts pull request review contributions from GraphQL response.
+   */
+  private extractReviewContributions(reviewNodes: GraphQLReviewNode[]): Contribution[] {
+    const contributions: Contribution[] = [];
+
+    for (const review of reviewNodes) {
+      if (review && typeof review.occurredAt === 'string') {
+        contributions.push({
+          type: 'review',
+          timestamp: review.occurredAt,
+          text: 'review',
+          url: review.pullRequestReview?.url,
+        });
+      }
+    }
+
+    return contributions;
+  }
+
+  /**
+   * Extracts commit contributions from push events to base branches.
+   * Filters by date range and base branch references.
+   */
+  private extractPushEventContributions(
+    events: GitHubEvent[],
+    dateRangeTimestamps: DateRangeTimestamps,
+  ): Contribution[] {
+    const contributions: Contribution[] = [];
+
+    const baseBranchReferences = new Set([
+      'refs/heads/main',
+      'refs/heads/master',
+      'refs/heads/development',
+      'refs/heads/develop',
+    ]);
+
+    for (const event of events) {
+      if (!event || typeof event !== 'object') continue;
+      if (event.type !== 'PushEvent') continue;
+
+      const createdAt = event.created_at;
+      const reference = event.payload?.ref;
+
+      if (typeof createdAt !== 'string' || typeof reference !== 'string') continue;
+
+      const createdTimestamp = Date.parse(createdAt);
+      if (Number.isNaN(createdTimestamp)) continue;
+
+      if (
+        createdTimestamp < dateRangeTimestamps.fromTimestamp ||
+        createdTimestamp > dateRangeTimestamps.toTimestamp
+      ) {
+        continue;
+      }
+
+      if (!baseBranchReferences.has(reference)) continue;
+
+      const repositoryName = event.repo?.name;
+      const commits = event.payload?.commits;
+
+      if (!Array.isArray(commits)) continue;
+
+      for (const commit of commits) {
+        if (!commit || typeof commit !== 'object') continue;
+
+        const sha = commit.sha;
+        const message = commit.message;
+        const url =
+          sha && repositoryName ? `https://github.com/${repositoryName}/commit/${sha}` : commit.url;
+
+        contributions.push({
+          type: 'commit',
+          timestamp: createdAt,
+          text: message,
+          url,
+        });
+      }
+    }
+
+    return contributions;
+  }
+
+  /**
+   * Deduplicates contributions by composite key: type|timestamp|url|text.
+   */
+  private deduplicateContributions(contributions: Contribution[]): Contribution[] {
+    const uniqueContributions = new Map<string, Contribution>();
+
+    for (const contribution of contributions) {
+      const key = `${contribution.type}|${contribution.timestamp}|${contribution.url ?? ''}|${contribution.text ?? ''}`;
+      if (!uniqueContributions.has(key)) {
+        uniqueContributions.set(key, contribution);
+      }
+    }
+
+    return Array.from(uniqueContributions.values());
+  }
+
+  /**
+   * Fetches all contributions for the authenticated user within the date range.
+   * Combines GraphQL API (commits, PRs, reviews) and Events API (direct pushes).
+   */
+  async fetchContributions(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
+    const login = await this.getUserLogin();
+
+    const dateRange: DateRange = {
+      from: from.toISOString(),
+      to: to.toISOString(),
+    };
+
+    const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
+
+    const allContributions: Contribution[] = [];
+
+    if (contributionsCollection) {
+      allContributions.push(
+        ...this.extractCommitContributions(
+          contributionsCollection.commitContributionsByRepository ?? [],
+        ),
+      );
+
+      allContributions.push(
+        ...this.extractPullRequestContributions(
+          contributionsCollection.pullRequestContributions?.nodes ?? [],
+        ),
+      );
+
+      allContributions.push(
+        ...this.extractReviewContributions(
+          contributionsCollection.pullRequestReviewContributions?.nodes ?? [],
+        ),
+      );
+    }
+
+    const events = await this.fetchEventsApiData(login);
+    const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
+
+    allContributions.push(...this.extractPushEventContributions(events, dateRangeTimestamps));
+
+    return this.deduplicateContributions(allContributions);
   }
 }
 
 export function createGitHubConnector(token?: string): GitHubConnector {
-  if (!token) {
+  if (token === undefined || token === null) {
     throw new Error(
       'GH_TOKEN environment variable is missing. To create a GitHub token see README or https://github.com/settings/tokens',
     );
+  }
+  if (token.trim() === '') {
+    throw new Error('A non-empty GitHub token string is required.');
   }
   return new GitHubConnector(token);
 }

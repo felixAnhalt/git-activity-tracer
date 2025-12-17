@@ -30,3 +30,43 @@ export type GraphQLResponse = {
 export type GraphQLErrorResponse = {
   errors?: Array<{ message: string; type?: string; path?: string[] }>;
 };
+
+export interface GitHubEventCommit {
+  sha?: string;
+  message?: string;
+  url?: string;
+}
+
+export interface GitHubEventPayload {
+  ref?: string;
+  commits?: GitHubEventCommit[];
+}
+
+export interface GitHubEventRepository {
+  name?: string;
+}
+
+export interface GitHubEvent {
+  type?: string;
+  created_at?: string;
+  repo?: GitHubEventRepository;
+  payload?: GitHubEventPayload;
+}
+
+export interface GraphQLApiResponse {
+  data?: unknown;
+}
+
+export interface EventsApiResponse {
+  data?: unknown;
+}
+
+export interface DateRange {
+  from: string;
+  to: string;
+}
+
+export interface DateRangeTimestamps {
+  fromTimestamp: number;
+  toTimestamp: number;
+}
