@@ -19,7 +19,8 @@ Code style (for agents):
 - Naming: `camelCase` for vars/funcs, `PascalCase` for types/classes, `UPPER_SNAKE` for constants
 - Error handling: handle async errors with `try/catch`; avoid silent catches
 - Imports order: external → internal → relative; run `pnpm run format` before commits
+- No abbreviations: write full words (for example: `item` not `it`, `configuration` not `config`, `repository` not `repo`)
 
 Agents & rules:
 
-- QA: `.opencode/agent/quality-assurance.md` then Code Reviewer: `.opencode/agent/code-reviewer.md` (`@quality-assurance` then `@code-reviewer`); No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` present
+- Start any task with the architect `@architect`. End each task with the Code Reviewer: `@code-reviewer` and then the QA subagent: `@quality-assurance`.

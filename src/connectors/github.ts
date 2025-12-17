@@ -1,38 +1,13 @@
 import { Octokit } from '@octokit/rest';
 import type { Dayjs } from 'dayjs';
+import type {
+  Contribution,
+  ContributionType,
+  GraphQLResponse,
+  GraphQLErrorResponse,
+} from './types.js';
 
-export type ContributionType = 'commit' | 'pr' | 'review';
-
-export type Contribution = {
-  type: ContributionType;
-  timestamp: string;
-  text?: string;
-  url?: string;
-};
-
-type GraphQLCommitNode = { occurredAt?: string; url?: string };
-type GraphQLCommitRepo = {
-  repository?: { nameWithOwner?: string };
-  contributions?: { nodes?: GraphQLCommitNode[] };
-};
-
-type GraphQLPRNode = { occurredAt?: string; pullRequest?: { title?: string; url?: string } };
-
-type GraphQLReviewNode = { occurredAt?: string; pullRequestReview?: { url?: string } };
-
-type GraphQLResponse = {
-  user?: {
-    contributionsCollection?: {
-      commitContributionsByRepository?: GraphQLCommitRepo[];
-      pullRequestContributions?: { nodes?: GraphQLPRNode[] };
-      pullRequestReviewContributions?: { nodes?: GraphQLReviewNode[] };
-    };
-  };
-};
-
-type GraphQLErrorResponse = {
-  errors?: Array<{ message: string; type?: string; path?: string[] }>;
-};
+export type { Contribution, ContributionType } from './types.js';
 
 const QUERY = `
 query($login: String!, $from: DateTime!, $to: DateTime!) {

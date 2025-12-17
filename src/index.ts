@@ -13,27 +13,32 @@ const argv = yargs(process.argv.slice(2))
 
 async function main() {
   const connector = createGitHubConnector(process.env.GH_TOKEN);
-  const { from, to } = parseRange(argv.from as string | undefined, argv.to as string | undefined);
+  const { from, to } = parseRange(argv.from, argv.to);
 
   const items = await connector.fetchContributions(from, to);
 
-  // Sort by timestamp using dayjs consistently
+  if (items.length === 0) {
+    console.log('No contributions found in this range');
+    return;
+  }
+
   items.sort((a, b) => dayjs(a.timestamp).valueOf() - dayjs(b.timestamp).valueOf());
 
   const byHour = new Map<string, Contribution[]>();
-  for (const it of items) {
-    const h = dayjs(it.timestamp).format('YYYY-MM-DD HH:00');
+  for (const item of items) {
+    const h = dayjs(item.timestamp).format('YYYY-MM-DD HH:00');
     if (!byHour.has(h)) byHour.set(h, []);
-    byHour.get(h)!.push(it);
+    byHour.get(h)!.push(item);
   }
 
-  for (const [hour, list] of [...byHour.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+  for (const [hour, list] of byHour) {
     console.log(`\n## ${hour}`);
-    for (const it of list) {
-      const line = argv['with-links']
-        ? `${it.type}: ${it.timestamp} - ${it.text ?? ''} (${it.url ?? ''})`
-        : `${it.type}: ${it.timestamp} - ${it.text ?? ''}`;
-      console.log(line);
+    for (const contribution of list) {
+      const ts = dayjs(contribution.timestamp).format('HH:mm:ss');
+      const parts = [contribution.type, ts];
+      if (contribution.text) parts.push(contribution.text);
+      if (argv['with-links'] && contribution.url) parts.push(`(${contribution.url})`);
+      console.log(parts.join(': '));
     }
   }
 }
