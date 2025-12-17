@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GitHubConnector } from '../src/connectors/github.js';
+import { GitHubConnector, createGitHubConnector } from '../src/connectors/github.js';
 import dayjs from 'dayjs';
 
 describe('GitHubConnector', () => {
@@ -15,9 +15,8 @@ describe('GitHubConnector', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    connector = new GitHubConnector('test-token');
-    // @ts-expect-error - mocking private property
-    connector.octokit = mockOctokit;
+    // inject the mock Octokit directly via constructor
+    connector = new GitHubConnector(mockOctokit as any);
   });
 
   describe('getUserLogin', () => {
@@ -40,7 +39,8 @@ describe('GitHubConnector', () => {
         data: { login: 'testuser' },
       });
 
-      mockOctokit.request.mockResolvedValue({
+      // GraphQL response
+      const graphqlResp = {
         data: {
           data: {
             user: {
@@ -83,11 +83,36 @@ describe('GitHubConnector', () => {
             },
           },
         },
-      });
+      };
+
+      // Events response with a PushEvent to main
+      const eventsResp = {
+        data: [
+          {
+            id: '1',
+            type: 'PushEvent',
+            repo: { name: 'test/repo' },
+            payload: {
+              ref: 'refs/heads/main',
+              commits: [
+                {
+                  sha: 'def456',
+                  message: 'Hotfix',
+                  url: 'https://github.com/test/repo/commit/def456',
+                },
+              ],
+            },
+            created_at: '2025-01-18T12:00:00Z',
+          },
+        ],
+      };
+
+      mockOctokit.request.mockResolvedValueOnce(graphqlResp).mockResolvedValueOnce(eventsResp);
 
       const contributions = await connector.fetchContributions(from, to);
 
-      expect(contributions).toHaveLength(3);
+      // Should include 4 items now (3 from GraphQL + 1 from events)
+      expect(contributions).toHaveLength(4);
       expect(contributions[0]).toMatchObject({
         type: 'commit',
         timestamp: '2025-01-15T10:00:00Z',
@@ -104,6 +129,15 @@ describe('GitHubConnector', () => {
         timestamp: '2025-01-17T09:00:00Z',
         text: 'review',
         url: 'https://github.com/test/repo/pull/2#review',
+      });
+
+      // The event-derived commit should be present
+      const eventCommit = contributions.find((c) => c.url?.includes('def456'));
+      expect(eventCommit).toBeDefined();
+      expect(eventCommit).toMatchObject({
+        type: 'commit',
+        timestamp: '2025-01-18T12:00:00Z',
+        text: 'Hotfix',
       });
     });
 
@@ -149,7 +183,7 @@ describe('GitHubConnector', () => {
         data: { login: 'testuser' },
       });
 
-      mockOctokit.request.mockResolvedValue({
+      const graphqlResp = {
         data: {
           data: {
             user: {
@@ -161,7 +195,11 @@ describe('GitHubConnector', () => {
             },
           },
         },
-      });
+      };
+
+      const eventsResp = { data: [] };
+
+      mockOctokit.request.mockResolvedValueOnce(graphqlResp).mockResolvedValueOnce(eventsResp);
 
       const contributions = await connector.fetchContributions(from, to);
       expect(contributions).toHaveLength(0);

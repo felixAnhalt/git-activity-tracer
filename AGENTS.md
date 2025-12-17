@@ -23,4 +23,8 @@ Code style (for agents):
 
 Agents & rules:
 
-- Start any task with the architect `@architect`. End each task with the Code Reviewer: `@code-reviewer` and then the QA subagent: `@quality-assurance`.
+- **Start each task** by invoking `@architect` to plan the implementation: identify files to change, steps to take, and potential issues.
+- **After making code changes**, automatically invoke `@code-reviewer` to review modified changes for quality, correctness, security, and best practices.
+- **After code review passes**, automatically invoke `@quality-assurance` to run tests (`pnpm test`), lint (`pnpm run lint`), and build (`pnpm build`) — all must pass before the task is complete.
+- **Never skip QA** — always run quality-assurance after code changes, even for small changes.
+- If you need to search the codebase for patterns or understand architecture, use `@explore` for fast file/code searches.
