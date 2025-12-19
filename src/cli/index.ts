@@ -4,6 +4,7 @@ import path from 'path';
 import { parseRange } from '../utils.js';
 import { createGitHubConnector } from '../connectors/github.js';
 import { createFormatter } from '../formatters/index.js';
+import { loadConfiguration, getConfigurationFilePathForDisplay } from '../configuration.js';
 import type { OutputFormat } from '../types.js';
 
 export async function main() {
@@ -27,11 +28,34 @@ export async function main() {
       default: 'console' as const,
       description: 'Output format',
     })
+    .option('show-config', {
+      type: 'boolean',
+      default: false,
+      description: 'Show configuration file location and exit',
+    })
     .help()
     .alias('help', 'h')
     .parseSync();
 
-  const connector = createGitHubConnector(process.env.GH_TOKEN);
+  // Handle --show-config flag
+  if (argv['show-config']) {
+    const configPath = getConfigurationFilePathForDisplay();
+    console.log(`Configuration file location: ${configPath}`);
+    console.log('\nTo customize base branches, edit this file with JSON like:');
+    console.log(
+      JSON.stringify(
+        {
+          baseBranches: ['main', 'master', 'develop', 'development', 'trunk'],
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  const configuration = await loadConfiguration();
+  const connector = createGitHubConnector(process.env.GH_TOKEN, configuration);
   const { from, to } = parseRange(argv.from, argv.to);
 
   const contributions = await connector.fetchContributions(from, to);

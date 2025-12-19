@@ -13,6 +13,7 @@ import type {
   GraphQLPRNode,
   GraphQLReviewNode,
 } from '../types.js';
+import type { Configuration } from '../configuration.js';
 
 export type { Contribution, ContributionType } from '../types.js';
 
@@ -39,6 +40,10 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
                       email
                       user { login }
                     }
+                  }
+                  pageInfo {
+                    hasNextPage
+                    endCursor
                   }
                 }
               }
@@ -71,6 +76,37 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
   }
 }`;
 
+// Query for paginating commit history for a specific repository
+const PAGINATED_COMMIT_QUERY = `
+query($owner: String!, $name: String!, $branch: String!, $cursor: String, $from: GitTimestamp, $to: GitTimestamp) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $branch) {
+      target {
+        ... on Commit {
+          history(first: 100, after: $cursor, since: $from, until: $to) {
+            nodes {
+              oid
+              committedDate
+              messageHeadline
+              message
+              url
+              author {
+                name
+                email
+                user { login }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
 function isGraphQLErrorResponse(x: unknown): x is GraphQLErrorResponse {
   return (
     !!x &&
@@ -91,11 +127,12 @@ function extractPayloadFromGraphQLResponse(raw: unknown): GraphQLResponse | null
 
 export class GitHubConnector {
   private octokit: Octokit;
+  private configuration: Configuration;
 
   /**
-   * Constructor accepts either an Octokit instance or a token string.
+   * Constructor accepts either an Octokit instance or a token string, plus configuration.
    */
-  constructor(octokitOrToken: Octokit | string) {
+  constructor(octokitOrToken: Octokit | string, configuration: Configuration) {
     if (typeof octokitOrToken === 'string') {
       if (!octokitOrToken || octokitOrToken.trim() === '') {
         throw new Error('A non-empty GitHub token string is required.');
@@ -106,6 +143,7 @@ export class GitHubConnector {
     } else {
       this.octokit = octokitOrToken;
     }
+    this.configuration = configuration;
   }
 
   async getUserLogin(): Promise<string> {
@@ -218,12 +256,108 @@ export class GitHubConnector {
   }
 
   /**
-   * Extracts commit contributions from GraphQL response.
+   * Fetches paginated commit history for a specific repository branch.
+   * Continues fetching until all commits in the date range are retrieved.
    */
-  private extractCommitContributions(
+  private async fetchPaginatedCommits(
+    owner: string,
+    name: string,
+    branch: string,
+    dateRange: DateRange,
+    initialCursor?: string,
+  ): Promise<Contribution[]> {
+    const contributions: Contribution[] = [];
+    let cursor = initialCursor;
+    let hasNextPage = true;
+
+    const repositoryName = `${owner}/${name}`;
+
+    while (hasNextPage) {
+      try {
+        const response = await this.octokit.request('POST /graphql', {
+          query: PAGINATED_COMMIT_QUERY,
+          variables: {
+            owner,
+            name,
+            branch: `refs/heads/${branch}`,
+            cursor,
+            from: dateRange.from,
+            to: dateRange.to,
+          },
+        });
+
+        const rawData = (response as GraphQLApiResponse).data;
+
+        if (isGraphQLErrorResponse(rawData)) {
+          console.warn(`Warning: Failed to paginate commits for ${repositoryName}/${branch}`);
+          break;
+        }
+
+        const data = rawData as {
+          data?: {
+            repository?: {
+              ref?: {
+                target?: {
+                  history?: {
+                    nodes?: Array<{
+                      oid?: string;
+                      committedDate?: string;
+                      messageHeadline?: string;
+                      message?: string;
+                      url?: string;
+                    }>;
+                    pageInfo?: {
+                      hasNextPage?: boolean;
+                      endCursor?: string;
+                    };
+                  };
+                };
+              };
+            };
+          };
+        };
+
+        const history = data.data?.repository?.ref?.target?.history;
+        if (!history?.nodes) break;
+
+        for (const commit of history.nodes) {
+          if (!commit?.committedDate) continue;
+
+          contributions.push({
+            type: 'commit',
+            timestamp: commit.committedDate,
+            text: commit.messageHeadline?.trim() || commit.message?.trim() || undefined,
+            url: commit.url,
+            repository: repositoryName,
+            target: branch,
+          });
+        }
+
+        hasNextPage = history.pageInfo?.hasNextPage ?? false;
+        cursor = history.pageInfo?.endCursor;
+
+        // Safety check: if no cursor, stop pagination
+        if (hasNextPage && !cursor) break;
+      } catch (error) {
+        console.warn(
+          `Warning: Error paginating commits for ${repositoryName}/${branch}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        break;
+      }
+    }
+
+    return contributions;
+  }
+
+  /**
+   * Extracts commit contributions from GraphQL response.
+   * Now supports pagination for repositories with more than 100 commits.
+   */
+  private async extractCommitContributions(
     commitsByRepository: GraphQLCommitRepoWithHistory[],
     dateRangeTimestamps: DateRangeTimestamps,
-  ): Contribution[] {
+    dateRange: DateRange,
+  ): Promise<Contribution[]> {
     const contributions: Contribution[] = [];
 
     for (const repositoryWrapper of commitsByRepository) {
@@ -234,11 +368,13 @@ export class GitHubConnector {
       const defaultBranchRef = repository.defaultBranchRef;
 
       // Handle repositories without a default branch (empty repositories)
-      if (!defaultBranchRef?.target?.history?.nodes) continue;
+      if (!defaultBranchRef?.target?.history) continue;
 
       const branchName = defaultBranchRef.name;
-      const commitNodes = defaultBranchRef.target.history.nodes;
+      const history = defaultBranchRef.target.history;
+      const commitNodes = history.nodes ?? [];
 
+      // Process initial batch of commits
       for (const commit of commitNodes) {
         if (!commit) continue;
 
@@ -264,6 +400,37 @@ export class GitHubConnector {
           repository: repositoryName,
           target: branchName,
         });
+      }
+
+      // If there are more pages, fetch them
+      if (
+        history.pageInfo?.hasNextPage &&
+        history.pageInfo.endCursor &&
+        repositoryName &&
+        branchName
+      ) {
+        const [owner, name] = repositoryName.split('/');
+        if (owner && name) {
+          const paginatedCommits = await this.fetchPaginatedCommits(
+            owner,
+            name,
+            branchName,
+            dateRange,
+            history.pageInfo.endCursor,
+          );
+
+          // Filter paginated commits by date range
+          for (const commit of paginatedCommits) {
+            const commitTimestamp = Date.parse(commit.timestamp);
+            if (
+              !Number.isNaN(commitTimestamp) &&
+              commitTimestamp >= dateRangeTimestamps.fromTimestamp &&
+              commitTimestamp <= dateRangeTimestamps.toTimestamp
+            ) {
+              contributions.push(commit);
+            }
+          }
+        }
       }
     }
 
@@ -316,7 +483,7 @@ export class GitHubConnector {
 
   /**
    * Extracts commit contributions from push events to base branches.
-   * Filters by date range and base branch references.
+   * Filters by date range and base branch references from configuration.
    */
   private extractPushEventContributions(
     events: GitHubEvent[],
@@ -324,12 +491,10 @@ export class GitHubConnector {
   ): Contribution[] {
     const contributions: Contribution[] = [];
 
-    const baseBranchReferences = new Set([
-      'refs/heads/main',
-      'refs/heads/master',
-      'refs/heads/development',
-      'refs/heads/develop',
-    ]);
+    // Build base branch references from configuration
+    const baseBranchReferences = new Set(
+      this.configuration.baseBranches.map((branch) => `refs/heads/${branch}`),
+    );
 
     for (const event of events) {
       if (!event || typeof event !== 'object') continue;
@@ -415,10 +580,11 @@ export class GitHubConnector {
 
     if (contributionsCollection) {
       allContributions.push(
-        ...this.extractCommitContributions(
+        ...(await this.extractCommitContributions(
           contributionsCollection.commitContributionsByRepository ?? [],
           dateRangeTimestamps,
-        ),
+          dateRange,
+        )),
       );
 
       allContributions.push(
@@ -442,7 +608,10 @@ export class GitHubConnector {
   }
 }
 
-export function createGitHubConnector(token?: string): GitHubConnector {
+export function createGitHubConnector(
+  token?: string,
+  configuration?: Configuration,
+): GitHubConnector {
   if (token === undefined || token === null) {
     throw new Error(
       'GH_TOKEN environment variable is missing. To create a GitHub token see README or https://github.com/settings/tokens',
@@ -451,5 +620,11 @@ export function createGitHubConnector(token?: string): GitHubConnector {
   if (token.trim() === '') {
     throw new Error('A non-empty GitHub token string is required.');
   }
-  return new GitHubConnector(token);
+
+  // Use provided configuration or defaults
+  const finalConfiguration: Configuration = configuration ?? {
+    baseBranches: ['main', 'master', 'develop', 'development'],
+  };
+
+  return new GitHubConnector(token, finalConfiguration);
 }

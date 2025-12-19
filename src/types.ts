@@ -26,14 +26,22 @@ export type GraphQLCommitHistoryNode = {
   author?: GraphQLCommitAuthor;
 };
 
+export type GraphQLPageInfo = {
+  hasNextPage?: boolean;
+  endCursor?: string;
+};
+
+export type GraphQLCommitHistory = {
+  nodes?: GraphQLCommitHistoryNode[];
+  pageInfo?: GraphQLPageInfo;
+};
+
 export type GraphQLRepositoryWithHistory = {
   nameWithOwner?: string;
   defaultBranchRef?: {
     name?: string;
     target?: {
-      history?: {
-        nodes?: GraphQLCommitHistoryNode[];
-      };
+      history?: GraphQLCommitHistory;
     };
   };
 };

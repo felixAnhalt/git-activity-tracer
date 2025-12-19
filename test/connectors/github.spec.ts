@@ -14,15 +14,19 @@ describe('GitHubConnector', () => {
     request: vi.fn(),
   };
 
+  const mockConfiguration = {
+    baseBranches: ['main', 'master', 'develop', 'development'],
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     // inject the mock Octokit directly via constructor
-    connector = new GitHubConnector(mockOctokit as unknown as Octokit);
+    connector = new GitHubConnector(mockOctokit as unknown as Octokit, mockConfiguration);
   });
 
   it('constructor should throw when constructed without token or Octokit', () => {
     // @ts-expect-error runtime test
-    expect(() => new GitHubConnector(undefined)).toThrow(
+    expect(() => new GitHubConnector(undefined, mockConfiguration)).toThrow(
       'Octokit instance or token string is required.',
     );
   });
@@ -58,6 +62,7 @@ describe('GitHubConnector', () => {
                     repository: {
                       nameWithOwner: 'test/repo',
                       defaultBranchRef: {
+                        name: 'main',
                         target: {
                           history: {
                             nodes: [
@@ -74,6 +79,10 @@ describe('GitHubConnector', () => {
                                 },
                               },
                             ],
+                            pageInfo: {
+                              hasNextPage: false,
+                              endCursor: null,
+                            },
                           },
                         },
                       },
