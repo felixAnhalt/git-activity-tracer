@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import 'dotenv/config';
 import { main } from './cli/index.js';
 
 // Top-level run with proper error handling to avoid unhandled rejections

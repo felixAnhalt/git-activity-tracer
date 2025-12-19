@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GitHubConnector, createGitHubConnector } from '../../src/connectors/github.js';
 import dayjs from 'dayjs';
+import type { Octokit } from '@octokit/rest';
 
 describe('GitHubConnector', () => {
   let connector: GitHubConnector;
@@ -16,7 +17,7 @@ describe('GitHubConnector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // inject the mock Octokit directly via constructor
-    connector = new GitHubConnector(mockOctokit as any);
+    connector = new GitHubConnector(mockOctokit as unknown as Octokit);
   });
 
   it('constructor should throw when constructed without token or Octokit', () => {
