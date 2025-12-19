@@ -112,4 +112,34 @@ describe('ConsoleFormatter', () => {
     const result = formatter.format(contributions, { withLinks: false });
     expect(result.content).toContain('(main)');
   });
+
+  it('includes projectId when available', () => {
+    const contributions: Contribution[] = [
+      {
+        type: 'commit',
+        timestamp: '2024-01-01T10:30:00Z',
+        text: 'Fix bug',
+        repository: 'user/repository',
+        projectId: 'PROJECT-123',
+      },
+    ];
+
+    const result = formatter.format(contributions, { withLinks: false });
+    expect(result.content).toContain('{PROJECT-123}');
+  });
+
+  it('omits projectId when not available', () => {
+    const contributions: Contribution[] = [
+      {
+        type: 'commit',
+        timestamp: '2024-01-01T10:30:00Z',
+        text: 'Fix bug',
+        repository: 'user/repository',
+      },
+    ];
+
+    const result = formatter.format(contributions, { withLinks: false });
+    expect(result.content).not.toContain('{');
+    expect(result.content).toContain('[user/repository]');
+  });
 });

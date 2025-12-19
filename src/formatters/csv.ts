@@ -14,7 +14,7 @@ export class CsvFormatter implements Formatter {
     const lines: string[] = [];
 
     // Header row
-    const headers = ['type', 'timestamp', 'date', 'repository', 'target', 'text'];
+    const headers = ['type', 'timestamp', 'date', 'repository', 'target', 'projectId', 'text'];
     if (options.withLinks) {
       headers.push('url');
     }
@@ -28,6 +28,7 @@ export class CsvFormatter implements Formatter {
         this.escapeCsvField(dayjs.utc(contribution.timestamp).format('YYYY-MM-DD')),
         this.escapeCsvField(contribution.repository ?? ''),
         this.escapeCsvField(contribution.target ?? ''),
+        this.escapeCsvField(contribution.projectId ?? ''),
         this.escapeCsvField(contribution.text ?? ''),
       ];
 

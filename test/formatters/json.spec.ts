@@ -163,4 +163,37 @@ describe('JsonFormatter', () => {
     expect(parsed[0]).toHaveProperty('date');
     expect(parsed[0].date).toBe('2024-12-31');
   });
+
+  it('includes projectId when available', () => {
+    const contributions: Contribution[] = [
+      {
+        type: 'commit',
+        timestamp: '2024-01-01T10:30:00Z',
+        text: 'Fix bug',
+        repository: 'user/repository',
+        projectId: 'PROJECT-123',
+      },
+    ];
+
+    const result = formatter.format(contributions, { withLinks: false });
+    const parsed = JSON.parse(result.content);
+
+    expect(parsed[0].projectId).toBe('PROJECT-123');
+  });
+
+  it('omits projectId when not available', () => {
+    const contributions: Contribution[] = [
+      {
+        type: 'commit',
+        timestamp: '2024-01-01T10:30:00Z',
+        text: 'Fix bug',
+        repository: 'user/repository',
+      },
+    ];
+
+    const result = formatter.format(contributions, { withLinks: false });
+    const parsed = JSON.parse(result.content);
+
+    expect(parsed[0].projectId).toBeUndefined();
+  });
 });

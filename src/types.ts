@@ -12,6 +12,7 @@ export type Contribution = {
   url?: string;
   repository?: string;
   target?: string;
+  projectId?: string;
 };
 
 export type OutputFormat = 'console' | 'json' | 'csv';

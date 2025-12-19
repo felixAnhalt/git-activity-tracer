@@ -16,4 +16,6 @@ export interface CliArguments {
   withLinks: boolean;
   output: OutputFormat;
   showConfig: boolean;
+  projectIdCommand?: boolean;
+  projectIdArgs?: string[];
 }

@@ -31,6 +31,9 @@ export class ConsoleFormatter implements Formatter {
         if (contribution.repository) {
           parts.push(`[${contribution.repository}]`);
         }
+        if (contribution.projectId) {
+          parts.push(`{${contribution.projectId}}`);
+        }
         if (contribution.target) {
           parts.push(`(${contribution.target})`);
         }

@@ -27,6 +27,10 @@ export class JsonFormatter implements Formatter {
         item.target = contribution.target;
       }
 
+      if (contribution.projectId) {
+        item.projectId = contribution.projectId;
+      }
+
       if (contribution.text) {
         item.text = contribution.text;
       }

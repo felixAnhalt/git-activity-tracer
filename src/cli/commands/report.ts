@@ -3,6 +3,7 @@ import { parseRange } from '../../utils.js';
 import { createFormatter } from '../../formatters/index.js';
 import { initializeConnectors } from '../../lib/initialization.js';
 import { writeOutput } from '../io/output.js';
+import { loadConfiguration } from '../../configuration.js';
 import type { CliArguments } from '../types.js';
 import type { Contribution } from '../../types.js';
 import type { Connector } from '../../connectors/types.js';
@@ -53,6 +54,25 @@ const fetchAndMergeContributions = async (
 };
 
 /**
+ * Enriches contributions with projectId by looking up repository names
+ * in the configuration's repositoryProjectIds mapping.
+ */
+const enrichContributionsWithProjectIds = (
+  contributions: Contribution[],
+  repositoryProjectIds: Record<string, string>,
+): Contribution[] => {
+  return contributions.map((contribution) => {
+    if (contribution.repository) {
+      const projectId = repositoryProjectIds[contribution.repository];
+      if (projectId) {
+        return { ...contribution, projectId };
+      }
+    }
+    return contribution;
+  });
+};
+
+/**
  * Fetches contributions, formats them, and writes output.
  * This is the core business logic that orchestrates the main workflow.
  * Supports fetching from multiple platforms simultaneously.
@@ -63,6 +83,7 @@ export const runContributionReport = async (cliArguments: CliArguments): Promise
   try {
     // Initialize all available connectors
     const connectors = await initializeConnectors();
+    const configuration = await loadConfiguration();
     const { from, to } = parseRange(cliArguments.from, cliArguments.to);
 
     // Get platform names for logging
@@ -78,11 +99,17 @@ export const runContributionReport = async (cliArguments: CliArguments): Promise
     // Fetch and merge data from all connectors
     const contributions = await fetchAndMergeContributions(connectorsWithNames, from, to);
 
-    console.log(`\nTotal: ${contributions.length} unique contributions\n`);
+    // Enrich with project IDs
+    const enrichedContributions = enrichContributionsWithProjectIds(
+      contributions,
+      configuration.repositoryProjectIds ?? {},
+    );
+
+    console.log(`\nTotal: ${enrichedContributions.length} unique contributions\n`);
 
     // Format data
     const formatter = createFormatter(cliArguments.output);
-    const result = formatter.format(contributions, {
+    const result = formatter.format(enrichedContributions, {
       withLinks: cliArguments.withLinks,
     });
 

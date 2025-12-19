@@ -4,10 +4,12 @@ import os from 'os';
 
 export interface Configuration {
   baseBranches: string[];
+  repositoryProjectIds?: Record<string, string>;
 }
 
 const DEFAULT_CONFIGURATION: Configuration = {
   baseBranches: ['main', 'master', 'develop', 'development'],
+  repositoryProjectIds: {},
 };
 
 const CONFIG_DIRECTORY_NAME = '.git-activity-tracer';

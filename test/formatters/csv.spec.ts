@@ -18,7 +18,7 @@ describe('CsvFormatter', () => {
     const result = formatter.format(contributions, { withLinks: true });
     const lines = result.content.split('\n');
 
-    expect(lines[0]).toBe('type,timestamp,date,repository,target,text,url');
+    expect(lines[0]).toBe('type,timestamp,date,repository,target,projectId,text,url');
     expect(lines[1]).toContain('commit');
     expect(lines[1]).toContain('2024-01-01T10:30:00Z');
   });
@@ -36,7 +36,7 @@ describe('CsvFormatter', () => {
     const result = formatter.format(contributions, { withLinks: false });
     const lines = result.content.split('\n');
 
-    expect(lines[0]).toBe('type,timestamp,date,repository,target,text');
+    expect(lines[0]).toBe('type,timestamp,date,repository,target,projectId,text');
     expect(lines[0]).not.toContain('url');
   });
 
@@ -100,7 +100,7 @@ describe('CsvFormatter', () => {
     const result = formatter.format(contributions, { withLinks: false });
     const lines = result.content.split('\n');
 
-    expect(lines[1]).toContain('commit,2024-01-01T10:30:00Z,2024-01-01,,,');
+    expect(lines[1]).toContain('commit,2024-01-01T10:30:00Z,2024-01-01,,,,');
   });
 
   it('includes repository column and data', () => {
@@ -133,7 +133,7 @@ describe('CsvFormatter', () => {
     const lines = result.content.split('\n');
 
     expect(lines[0]).toContain('repository');
-    expect(lines[1]).toContain('commit,2024-01-01T10:30:00Z,2024-01-01,,,Fix bug');
+    expect(lines[1]).toContain('commit,2024-01-01T10:30:00Z,2024-01-01,,,,Fix bug');
   });
 
   it('includes target branch column and data', () => {
@@ -184,5 +184,40 @@ describe('CsvFormatter', () => {
 
     expect(lines[0].split(',')).toContain('date');
     expect(lines[1]).toContain('2024-12-31');
+  });
+
+  it('includes projectId column when available', () => {
+    const contributions: Contribution[] = [
+      {
+        type: 'commit',
+        timestamp: '2024-01-01T10:30:00Z',
+        text: 'Fix bug',
+        repository: 'user/repository',
+        projectId: 'PROJECT-123',
+      },
+    ];
+
+    const result = formatter.format(contributions, { withLinks: false });
+    const lines = result.content.split('\n');
+
+    expect(lines[0]).toContain('projectId');
+    expect(lines[1]).toContain('PROJECT-123');
+  });
+
+  it('handles missing projectId gracefully', () => {
+    const contributions: Contribution[] = [
+      {
+        type: 'commit',
+        timestamp: '2024-01-01T10:30:00Z',
+        text: 'Fix bug',
+        repository: 'user/repository',
+      },
+    ];
+
+    const result = formatter.format(contributions, { withLinks: false });
+    const lines = result.content.split('\n');
+
+    expect(lines[0]).toContain('projectId');
+    expect(lines[1]).toContain('user/repository,,,Fix bug');
   });
 });

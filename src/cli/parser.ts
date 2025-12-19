@@ -34,6 +34,11 @@ export const parseCliArguments = (): CliArguments => {
       default: false,
       description: 'Show configuration file location and exit',
     })
+    .option('project-id', {
+      type: 'boolean',
+      default: false,
+      description: 'Manage repository project ID mappings: add|remove|list',
+    })
     .help()
     .alias('help', 'h')
     .parseSync();
@@ -44,5 +49,7 @@ export const parseCliArguments = (): CliArguments => {
     withLinks: argv['with-links'],
     output: argv.output as OutputFormat,
     showConfig: argv['show-config'],
+    projectIdCommand: argv['project-id'],
+    projectIdArgs: argv['project-id'] ? argv._.map(String) : undefined,
   };
 };

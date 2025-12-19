@@ -1,5 +1,6 @@
 import { parseCliArguments } from './parser.js';
 import { handleShowConfigCommand } from './commands/show-config.js';
+import { handleProjectIdCommand } from './commands/project-id.js';
 import { runContributionReport } from './commands/report.js';
 
 /**
@@ -8,6 +9,7 @@ import { runContributionReport } from './commands/report.js';
  *
  * Handles:
  * - --show-config: Display configuration and exit
+ * - --project-id: Manage repository project ID mappings
  * - default: Run contribution report
  */
 export const main = async () => {
@@ -16,6 +18,11 @@ export const main = async () => {
 
     if (cliArguments.showConfig) {
       handleShowConfigCommand();
+      return;
+    }
+
+    if (cliArguments.projectIdCommand) {
+      await handleProjectIdCommand(cliArguments.projectIdArgs ?? []);
       return;
     }
 

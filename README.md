@@ -46,6 +46,7 @@ pnpm start -- --output csv
 - **Multi-platform support**: GitHub and GitLab with automatic detection
 - **Comprehensive tracking**: Commits, pull/merge requests, and code reviews
 - **Multiple output formats**: Console (default), JSON, CSV
+- **Project ID mapping**: Map repositories to project IDs for billing and time tracking
 - **Flexible configuration**: Configurable base branches and date ranges
 - **Smart pagination**: Automatically fetches all contributions within limits
 - **Cross-platform**: Works on macOS, Linux, and Windows
@@ -69,6 +70,7 @@ The tool automatically detects available tokens and fetches from all configured 
 | `--with-links`      | Include URLs in console output               | false                  |
 | `--output <format>` | Output format: `console`, `json`, or `csv`   | `console`              |
 | `--show-config`     | Display configuration file location and exit | -                      |
+| `--project-id`      | Manage repository project ID mappings        | -                      |
 
 ## Usage Examples
 
@@ -112,6 +114,70 @@ pnpm start -- --from 2025-11-11 --to 2025-11-12 --output csv
 pnpm start -- --with-links
 ```
 
+## Project ID Mapping
+
+Map repositories to project IDs for billing and time tracking. Project IDs automatically appear in all output formats.
+
+### Manage Mappings
+
+```bash
+# List all project ID mappings
+pnpm start --project-id list
+
+# Add a mapping
+pnpm start --project-id add owner/repository PROJECT-123
+
+# Remove a mapping
+pnpm start --project-id remove owner/repository
+```
+
+### Example Workflow
+
+```bash
+# Configure your billable projects
+pnpm start --project-id add acme-corp/website 1727783287A
+pnpm start --project-id add globex/mobile-app 2849372837B
+
+# List configured mappings
+pnpm start --project-id list
+
+# Generate report - project IDs automatically included
+pnpm start -- --from 2025-12-01 --to 2025-12-19 --output csv
+```
+
+### Output Format
+
+Project IDs appear in all output formats:
+
+**Console:**
+
+```
+commit: 10:30:00: [acme-corp/website]: {1727783287A}: (main): Fix bug
+```
+
+**CSV:**
+
+```csv
+type,timestamp,date,repository,target,projectId,text
+commit,2025-12-01T10:30:00Z,2025-12-01,acme-corp/website,main,1727783287A,Fix bug
+```
+
+**JSON:**
+
+```json
+{
+  "type": "commit",
+  "timestamp": "2025-12-01T10:30:00Z",
+  "date": "2025-12-01",
+  "repository": "acme-corp/website",
+  "target": "main",
+  "projectId": "1727783287A",
+  "text": "Fix bug"
+}
+```
+
+Contributions without a configured project ID mapping will omit the `projectId` field.
+
 ## Configuration
 
 The tool uses a configuration file at `~/.git-activity-tracer/config.json` for customization. The file is automatically created with defaults on first run.
@@ -140,7 +206,10 @@ To track additional branches, edit `~/.git-activity-tracer/config.json`:
 
 ```json
 {
-  "baseBranches": ["main", "master", "develop", "development", "trunk", "staging"]
+  "baseBranches": ["main", "master", "develop", "development", "trunk", "staging"],
+  "repositoryProjectIds": {
+    "owner/repository": "PROJECT-123"
+  }
 }
 ```
 
