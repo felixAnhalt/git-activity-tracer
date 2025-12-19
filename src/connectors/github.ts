@@ -9,7 +9,7 @@ import type {
   EventsApiResponse,
   DateRange,
   DateRangeTimestamps,
-  GraphQLCommitRepo,
+  GraphQLCommitRepoWithHistory,
   GraphQLPRNode,
   GraphQLReviewNode,
 } from '../types.js';
@@ -20,12 +20,28 @@ const QUERY = `
 query($login: String!, $from: DateTime!, $to: DateTime!) {
   user(login: $login) {
     contributionsCollection(from: $from, to: $to) {
-      commitContributionsByRepository {
-        repository { nameWithOwner }
-        contributions(first: 100) {
-          nodes {
-            occurredAt
-            url
+      commitContributionsByRepository(maxRepositories: 50) {
+        repository {
+          nameWithOwner
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100) {
+                  nodes {
+                    oid
+                    committedDate
+                    messageHeadline
+                    message
+                    url
+                    author {
+                      name
+                      email
+                      user { login }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -174,18 +190,46 @@ export class GitHubConnector {
   /**
    * Extracts commit contributions from GraphQL response.
    */
-  private extractCommitContributions(commitsByRepository: GraphQLCommitRepo[]): Contribution[] {
+  private extractCommitContributions(
+    commitsByRepository: GraphQLCommitRepoWithHistory[],
+    dateRangeTimestamps: DateRangeTimestamps,
+  ): Contribution[] {
     const contributions: Contribution[] = [];
 
-    for (const repository of commitsByRepository) {
-      for (const node of repository.contributions?.nodes ?? []) {
-        if (node && typeof node.occurredAt === 'string') {
-          contributions.push({
-            type: 'commit',
-            timestamp: node.occurredAt,
-            url: node.url,
-          });
+    for (const repositoryWrapper of commitsByRepository) {
+      const repository = repositoryWrapper.repository;
+      if (!repository) continue;
+
+      const defaultBranchRef = repository.defaultBranchRef;
+
+      // Handle repositories without a default branch (empty repositories)
+      if (!defaultBranchRef?.target?.history?.nodes) continue;
+
+      const commitNodes = defaultBranchRef.target.history.nodes;
+
+      for (const commit of commitNodes) {
+        if (!commit) continue;
+
+        const timestamp = commit.committedDate;
+        if (!timestamp || typeof timestamp !== 'string') continue;
+
+        // Filter commits by date range
+        const commitTimestamp = Date.parse(timestamp);
+        if (Number.isNaN(commitTimestamp)) continue;
+
+        if (
+          commitTimestamp < dateRangeTimestamps.fromTimestamp ||
+          commitTimestamp > dateRangeTimestamps.toTimestamp
+        ) {
+          continue;
         }
+
+        contributions.push({
+          type: 'commit',
+          timestamp,
+          text: commit.messageHeadline?.trim() || commit.message?.trim() || undefined,
+          url: commit.url,
+        });
       }
     }
 
@@ -324,6 +368,7 @@ export class GitHubConnector {
     };
 
     const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
+    const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
 
     const allContributions: Contribution[] = [];
 
@@ -331,6 +376,7 @@ export class GitHubConnector {
       allContributions.push(
         ...this.extractCommitContributions(
           contributionsCollection.commitContributionsByRepository ?? [],
+          dateRangeTimestamps,
         ),
       );
 
@@ -348,7 +394,6 @@ export class GitHubConnector {
     }
 
     const events = await this.fetchEventsApiData(login);
-    const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
 
     allContributions.push(...this.extractPushEventContributions(events, dateRangeTimestamps));
 

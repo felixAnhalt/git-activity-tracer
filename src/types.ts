@@ -7,10 +7,36 @@ export type Contribution = {
   url?: string;
 };
 
-export type GraphQLCommitNode = { occurredAt?: string; url?: string };
-export type GraphQLCommitRepo = {
-  repository?: { nameWithOwner?: string };
-  contributions?: { nodes?: GraphQLCommitNode[] };
+export type GraphQLCommitAuthor = {
+  name?: string;
+  email?: string;
+  user?: {
+    login?: string;
+  };
+};
+
+export type GraphQLCommitHistoryNode = {
+  oid?: string;
+  committedDate?: string;
+  messageHeadline?: string;
+  message?: string;
+  url?: string;
+  author?: GraphQLCommitAuthor;
+};
+
+export type GraphQLRepositoryWithHistory = {
+  nameWithOwner?: string;
+  defaultBranchRef?: {
+    target?: {
+      history?: {
+        nodes?: GraphQLCommitHistoryNode[];
+      };
+    };
+  };
+};
+
+export type GraphQLCommitRepoWithHistory = {
+  repository?: GraphQLRepositoryWithHistory;
 };
 
 export type GraphQLPRNode = { occurredAt?: string; pullRequest?: { title?: string; url?: string } };
@@ -20,7 +46,7 @@ export type GraphQLReviewNode = { occurredAt?: string; pullRequestReview?: { url
 export type GraphQLResponse = {
   user?: {
     contributionsCollection?: {
-      commitContributionsByRepository?: GraphQLCommitRepo[];
+      commitContributionsByRepository?: GraphQLCommitRepoWithHistory[];
       pullRequestContributions?: { nodes?: GraphQLPRNode[] };
       pullRequestReviewContributions?: { nodes?: GraphQLReviewNode[] };
     };

@@ -36,7 +36,9 @@ async function main() {
     for (const contribution of list) {
       const ts = dayjs(contribution.timestamp).format('HH:mm:ss');
       const parts = [contribution.type, ts];
-      if (contribution.text) parts.push(contribution.text);
+      if (contribution.text) {
+        parts.push(contribution.text);
+      }
       if (argv['with-links'] && contribution.url) parts.push(`(${contribution.url})`);
       console.log(parts.join(': '));
     }
