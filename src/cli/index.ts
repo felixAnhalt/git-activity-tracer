@@ -1,82 +1,27 @@
-import yargs from 'yargs';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { parseRange } from '../utils.js';
-import { createGitHubConnector } from '../connectors/github.js';
-import { createFormatter } from '../formatters/index.js';
-import { loadConfiguration, getConfigurationFilePathForDisplay } from '../configuration.js';
-import type { OutputFormat } from '../types.js';
+import { parseCliArguments } from './parser.js';
+import { handleShowConfigCommand } from './commands/show-config.js';
+import { runContributionReport } from './commands/report.js';
 
-export async function main() {
-  const argv = yargs(process.argv.slice(2))
-    .option('from', {
-      type: 'string',
-      description: 'Start date (YYYY-MM-DD). Defaults to Monday of current week',
-    })
-    .option('to', {
-      type: 'string',
-      description: 'End date (YYYY-MM-DD). Defaults to today',
-    })
-    .option('with-links', {
-      type: 'boolean',
-      default: false,
-      description: 'Include URLs in output',
-    })
-    .option('output', {
-      type: 'string',
-      choices: ['console', 'json', 'csv'] as const,
-      default: 'console' as const,
-      description: 'Output format',
-    })
-    .option('show-config', {
-      type: 'boolean',
-      default: false,
-      description: 'Show configuration file location and exit',
-    })
-    .help()
-    .alias('help', 'h')
-    .parseSync();
+/**
+ * Main CLI entry point.
+ * Parses arguments and routes to appropriate command handler.
+ *
+ * Handles:
+ * - --show-config: Display configuration and exit
+ * - default: Run contribution report
+ */
+export const main = async () => {
+  try {
+    const cliArguments = parseCliArguments();
 
-  // Handle --show-config flag
-  if (argv['show-config']) {
-    const configPath = getConfigurationFilePathForDisplay();
-    console.log(`Configuration file location: ${configPath}`);
-    console.log('\nTo customize base branches, edit this file with JSON like:');
-    console.log(
-      JSON.stringify(
-        {
-          baseBranches: ['main', 'master', 'develop', 'development', 'trunk'],
-        },
-        null,
-        2,
-      ),
-    );
-    return;
+    if (cliArguments.showConfig) {
+      handleShowConfigCommand();
+      return;
+    }
+
+    await runContributionReport(cliArguments);
+  } catch (error) {
+    console.error('Fatal error:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
   }
-
-  const configuration = await loadConfiguration();
-  const connector = createGitHubConnector(process.env.GH_TOKEN, configuration);
-  const { from, to } = parseRange(argv.from, argv.to);
-
-  const contributions = await connector.fetchContributions(from, to);
-
-  const formatter = createFormatter(argv.output as OutputFormat);
-  const result = formatter.format(contributions, {
-    withLinks: argv['with-links'],
-  });
-
-  // Handle output
-  if (argv.output === 'console') {
-    console.log(result.content);
-  } else {
-    // Generate filename for file outputs
-    const fromFormatted = from.format('YYYY-MM-DD');
-    const toFormatted = to.format('YYYY-MM-DD');
-    const extension = argv.output === 'json' ? 'json' : 'csv';
-    const filename = `git-contributions-${fromFormatted}-${toFormatted}.${extension}`;
-    const filepath = path.resolve(process.cwd(), filename);
-
-    await fs.writeFile(filepath, result.content, 'utf-8');
-    console.log(`Output written to: ${filename}`);
-  }
-}
+};

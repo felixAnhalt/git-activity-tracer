@@ -17,21 +17,21 @@ const CONFIG_FILE_NAME = 'config.json';
  * Gets the configuration directory path.
  * Cross-platform: uses home directory on all systems.
  */
-function getConfigurationDirectoryPath(): string {
+const getConfigurationDirectoryPath = (): string => {
   return path.join(os.homedir(), CONFIG_DIRECTORY_NAME);
-}
+};
 
 /**
  * Gets the configuration file path.
  */
-function getConfigurationFilePath(): string {
+const getConfigurationFilePath = (): string => {
   return path.join(getConfigurationDirectoryPath(), CONFIG_FILE_NAME);
-}
+};
 
 /**
  * Ensures the configuration directory exists.
  */
-async function ensureConfigurationDirectory(): Promise<void> {
+const ensureConfigurationDirectory = async (): Promise<void> => {
   const directoryPath = getConfigurationDirectoryPath();
   try {
     await fs.mkdir(directoryPath, { recursive: true });
@@ -41,13 +41,13 @@ async function ensureConfigurationDirectory(): Promise<void> {
       throw error;
     }
   }
-}
+};
 
 /**
  * Loads configuration from file or returns defaults.
  * If the file doesn't exist, creates it with default values.
  */
-export async function loadConfiguration(): Promise<Configuration> {
+export const loadConfiguration = async (): Promise<Configuration> => {
   const filePath = getConfigurationFilePath();
 
   try {
@@ -72,21 +72,21 @@ export async function loadConfiguration(): Promise<Configuration> {
     );
     return DEFAULT_CONFIGURATION;
   }
-}
+};
 
 /**
  * Saves configuration to file.
  */
-export async function saveConfiguration(configuration: Configuration): Promise<void> {
+export const saveConfiguration = async (configuration: Configuration): Promise<void> => {
   await ensureConfigurationDirectory();
   const filePath = getConfigurationFilePath();
   const content = JSON.stringify(configuration, null, 2);
   await fs.writeFile(filePath, content, 'utf-8');
-}
+};
 
 /**
  * Gets the configuration file path for display purposes.
  */
-export function getConfigurationFilePathForDisplay(): string {
+export const getConfigurationFilePathForDisplay = (): string => {
   return getConfigurationFilePath();
-}
+};

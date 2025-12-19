@@ -107,23 +107,23 @@ query($owner: String!, $name: String!, $branch: String!, $cursor: String, $from:
   }
 }`;
 
-function isGraphQLErrorResponse(x: unknown): x is GraphQLErrorResponse {
+const isGraphQLErrorResponse = (x: unknown): x is GraphQLErrorResponse => {
   return (
     !!x &&
     typeof x === 'object' &&
     'errors' in x &&
     Array.isArray((x as { errors?: unknown }).errors)
   );
-}
+};
 
-function extractPayloadFromGraphQLResponse(raw: unknown): GraphQLResponse | null {
+const extractPayloadFromGraphQLResponse = (raw: unknown): GraphQLResponse | null => {
   // Octokit returns { data: { data: { ... } } } for GraphQL queries; handle both shapes
   if (!raw || typeof raw !== 'object') return null;
   const asAny = raw as { data?: unknown };
   const inner = asAny.data ?? raw;
   if (!inner || typeof inner !== 'object') return null;
   return inner as GraphQLResponse;
-}
+};
 
 export class GitHubConnector {
   private octokit: Octokit;
@@ -268,10 +268,9 @@ export class GitHubConnector {
   ): Promise<Contribution[]> {
     const contributions: Contribution[] = [];
     let cursor = initialCursor;
-    let hasNextPage = true;
-
     const repositoryName = `${owner}/${name}`;
 
+    let hasNextPage = true;
     while (hasNextPage) {
       try {
         const response = await this.octokit.request('POST /graphql', {
@@ -608,10 +607,10 @@ export class GitHubConnector {
   }
 }
 
-export function createGitHubConnector(
+export const createGitHubConnector = (
   token?: string,
   configuration?: Configuration,
-): GitHubConnector {
+): GitHubConnector => {
   if (token === undefined || token === null) {
     throw new Error(
       'GH_TOKEN environment variable is missing. To create a GitHub token see README or https://github.com/settings/tokens',
@@ -627,4 +626,4 @@ export function createGitHubConnector(
   };
 
   return new GitHubConnector(token, finalConfiguration);
-}
+};

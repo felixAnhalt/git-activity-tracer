@@ -8,7 +8,7 @@ dayjs.extend(weekday);
  * If today is Monday, returns Monday to Monday.
  * If today is Tuesday, returns Monday to Tuesday, etc.
  */
-export function getCurrentWeekRange(): { from: dayjs.Dayjs; to: dayjs.Dayjs } {
+export const getCurrentWeekRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   const today = dayjs();
   const dayOfWeek = today.day(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
 
@@ -21,9 +21,9 @@ export function getCurrentWeekRange(): { from: dayjs.Dayjs; to: dayjs.Dayjs } {
     from: monday.startOf('day'),
     to: today.endOf('day'),
   };
-}
+};
 
-export function parseRange(from?: string, to?: string): { from: dayjs.Dayjs; to: dayjs.Dayjs } {
+export const parseRange = (from?: string, to?: string): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   // If both are undefined, use current week
   if (from === undefined && to === undefined) {
     return getCurrentWeekRange();
@@ -42,4 +42,4 @@ export function parseRange(from?: string, to?: string): { from: dayjs.Dayjs; to:
     return { from: parsedTo, to: parsedFrom };
   }
   return { from: parsedFrom, to: parsedTo };
-}
+};

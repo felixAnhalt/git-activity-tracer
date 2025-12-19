@@ -17,6 +17,9 @@ Code style (for agents):
 - Use ESM imports; prefer named exports; avoid default except CLI entry
 - `tsconfig.json` `strict: true`; prefer explicit types; avoid `any`
 - Naming: `camelCase` for vars/funcs, `PascalCase` for types/classes, `UPPER_SNAKE` for constants
+- Prefer arrow functions; use `const` over `let` where possible
+- Async/await: always use `async`/`await` over `.then()`;
+- Use classes when encapsulating state/behavior or implementing interfaces; use pure functions for stateless logic
 - Error handling: handle async errors with `try/catch`; avoid silent catches
 - Imports order: external → internal → relative; run `pnpm run format` before commits
 - No abbreviations: write full words (for example: `item` not `it`, `configuration` not `config`, `repository` not `repo`)

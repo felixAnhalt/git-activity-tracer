@@ -9,7 +9,7 @@ export { JsonFormatter } from './json.js';
 export { CsvFormatter } from './csv.js';
 export type { Formatter } from './types.js';
 
-export function createFormatter(format: OutputFormat): Formatter {
+export const createFormatter = (format: OutputFormat): Formatter => {
   switch (format) {
     case 'console':
       return new ConsoleFormatter();
@@ -20,4 +20,4 @@ export function createFormatter(format: OutputFormat): Formatter {
     default:
       throw new Error(`Unknown output format: ${format}`);
   }
-}
+};
