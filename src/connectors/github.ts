@@ -24,6 +24,7 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
         repository {
           nameWithOwner
           defaultBranchRef {
+            name
             target {
               ... on Commit {
                 history(first: 100) {
@@ -48,13 +49,22 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
       pullRequestContributions(first: 100) {
         nodes {
           occurredAt
-          pullRequest { title url }
+          pullRequest {
+            title
+            url
+            baseRefName
+          }
         }
       }
       pullRequestReviewContributions(first: 100) {
         nodes {
           occurredAt
-          pullRequestReview { url }
+          pullRequestReview {
+            url
+            pullRequest {
+              baseRefName
+            }
+          }
         }
       }
     }
@@ -168,6 +178,15 @@ export class GitHubConnector {
 
       return rawData as GitHubEvent[];
     } catch (error) {
+      // Log warnings for authentication or rate limit errors
+      if (error && typeof error === 'object' && 'status' in error) {
+        const status = (error as { status: number }).status;
+        if (status === 401) {
+          console.warn('Warning: GitHub Events API authentication failed. Check your token.');
+        } else if (status === 403) {
+          console.warn('Warning: GitHub Events API rate limit exceeded or access forbidden.');
+        }
+      }
       return [];
     }
   }
@@ -188,6 +207,17 @@ export class GitHubConnector {
   }
 
   /**
+   * Extracts repository name from GitHub URL.
+   * @param url GitHub URL in format: https://github.com/owner/repository/...
+   * @returns Repository name in format: owner/repository or undefined if unable to extract
+   */
+  private extractRepositoryFromUrl(url?: string): string | undefined {
+    if (!url) return undefined;
+    const match = url.match(/github\.com\/([^/?#]+\/[^/?#]+)/);
+    return match?.[1];
+  }
+
+  /**
    * Extracts commit contributions from GraphQL response.
    */
   private extractCommitContributions(
@@ -200,11 +230,13 @@ export class GitHubConnector {
       const repository = repositoryWrapper.repository;
       if (!repository) continue;
 
+      const repositoryName = repository.nameWithOwner;
       const defaultBranchRef = repository.defaultBranchRef;
 
       // Handle repositories without a default branch (empty repositories)
       if (!defaultBranchRef?.target?.history?.nodes) continue;
 
+      const branchName = defaultBranchRef.name;
       const commitNodes = defaultBranchRef.target.history.nodes;
 
       for (const commit of commitNodes) {
@@ -229,6 +261,8 @@ export class GitHubConnector {
           timestamp,
           text: commit.messageHeadline?.trim() || commit.message?.trim() || undefined,
           url: commit.url,
+          repository: repositoryName,
+          target: branchName,
         });
       }
     }
@@ -249,6 +283,8 @@ export class GitHubConnector {
           timestamp: pullRequest.occurredAt,
           text: pullRequest.pullRequest?.title,
           url: pullRequest.pullRequest?.url,
+          repository: this.extractRepositoryFromUrl(pullRequest.pullRequest?.url),
+          target: pullRequest.pullRequest?.baseRefName,
         });
       }
     }
@@ -269,6 +305,8 @@ export class GitHubConnector {
           timestamp: review.occurredAt,
           text: 'review',
           url: review.pullRequestReview?.url,
+          repository: this.extractRepositoryFromUrl(review.pullRequestReview?.url),
+          target: review.pullRequestReview?.pullRequest?.baseRefName,
         });
       }
     }
@@ -316,6 +354,7 @@ export class GitHubConnector {
 
       const repositoryName = event.repo?.name;
       const commits = event.payload?.commits;
+      const branchName = reference.replace('refs/heads/', '');
 
       if (!Array.isArray(commits)) continue;
 
@@ -332,6 +371,8 @@ export class GitHubConnector {
           timestamp: createdAt,
           text: message,
           url,
+          repository: repositoryName,
+          target: branchName,
         });
       }
     }
@@ -340,13 +381,13 @@ export class GitHubConnector {
   }
 
   /**
-   * Deduplicates contributions by composite key: type|timestamp|url|text.
+   * Deduplicates contributions by composite key: type|timestamp|url|text|repository|target.
    */
   private deduplicateContributions(contributions: Contribution[]): Contribution[] {
     const uniqueContributions = new Map<string, Contribution>();
 
     for (const contribution of contributions) {
-      const key = `${contribution.type}|${contribution.timestamp}|${contribution.url ?? ''}|${contribution.text ?? ''}`;
+      const key = `${contribution.type}|${contribution.timestamp}|${contribution.url ?? ''}|${contribution.text ?? ''}|${contribution.repository ?? ''}|${contribution.target ?? ''}`;
       if (!uniqueContributions.has(key)) {
         uniqueContributions.set(key, contribution);
       }

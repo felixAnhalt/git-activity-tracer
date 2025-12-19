@@ -3,11 +3,18 @@ import { parseRange } from '../src/utils.js';
 import dayjs from 'dayjs';
 
 describe('parseRange', () => {
-  it('returns today when no args provided', () => {
+  it('returns current week range when no args provided', () => {
     const { from, to } = parseRange();
-    const today = dayjs().format('YYYY-MM-DD');
-    expect(from.format('YYYY-MM-DD')).toBe(today);
-    expect(to.format('YYYY-MM-DD')).toBe(today);
+    const today = dayjs();
+
+    // from should be Monday of current week
+    expect(from.day()).toBe(1); // 1 = Monday
+
+    // to should be today
+    expect(to.format('YYYY-MM-DD')).toBe(today.format('YYYY-MM-DD'));
+
+    // from should be before or equal to to
+    expect(from.isBefore(to) || from.isSame(to, 'day')).toBe(true);
   });
 
   it('parses provided dates', () => {

@@ -5,6 +5,8 @@ export type Contribution = {
   timestamp: string;
   text?: string;
   url?: string;
+  repository?: string;
+  target?: string;
 };
 
 export type GraphQLCommitAuthor = {
@@ -27,6 +29,7 @@ export type GraphQLCommitHistoryNode = {
 export type GraphQLRepositoryWithHistory = {
   nameWithOwner?: string;
   defaultBranchRef?: {
+    name?: string;
     target?: {
       history?: {
         nodes?: GraphQLCommitHistoryNode[];
@@ -39,9 +42,24 @@ export type GraphQLCommitRepoWithHistory = {
   repository?: GraphQLRepositoryWithHistory;
 };
 
-export type GraphQLPRNode = { occurredAt?: string; pullRequest?: { title?: string; url?: string } };
+export type GraphQLPRNode = {
+  occurredAt?: string;
+  pullRequest?: {
+    title?: string;
+    url?: string;
+    baseRefName?: string;
+  };
+};
 
-export type GraphQLReviewNode = { occurredAt?: string; pullRequestReview?: { url?: string } };
+export type GraphQLReviewNode = {
+  occurredAt?: string;
+  pullRequestReview?: {
+    url?: string;
+    pullRequest?: {
+      baseRefName?: string;
+    };
+  };
+};
 
 export type GraphQLResponse = {
   user?: {
@@ -95,4 +113,15 @@ export interface DateRange {
 export interface DateRangeTimestamps {
   fromTimestamp: number;
   toTimestamp: number;
+}
+
+export type OutputFormat = 'console' | 'json' | 'csv';
+
+export interface FormatterOptions {
+  withLinks: boolean;
+}
+
+export interface FormatterResult {
+  content: string;
+  filename?: string;
 }

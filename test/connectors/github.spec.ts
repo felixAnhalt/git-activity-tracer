@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GitHubConnector, createGitHubConnector } from '../src/connectors/github.js';
+import { GitHubConnector, createGitHubConnector } from '../../src/connectors/github.js';
 import dayjs from 'dayjs';
 
 describe('GitHubConnector', () => {
@@ -54,14 +54,28 @@ describe('GitHubConnector', () => {
               contributionsCollection: {
                 commitContributionsByRepository: [
                   {
-                    repository: { nameWithOwner: 'test/repo' },
-                    contributions: {
-                      nodes: [
-                        {
-                          occurredAt: '2025-01-15T10:00:00Z',
-                          url: 'https://github.com/test/repo/commit/abc123',
+                    repository: {
+                      nameWithOwner: 'test/repo',
+                      defaultBranchRef: {
+                        target: {
+                          history: {
+                            nodes: [
+                              {
+                                oid: 'abc123',
+                                committedDate: '2025-01-15T10:00:00Z',
+                                messageHeadline: 'Add feature',
+                                message: 'Add feature\n\nDetailed description',
+                                url: 'https://github.com/test/repo/commit/abc123',
+                                author: {
+                                  name: 'Test User',
+                                  email: 'test@example.com',
+                                  user: { login: 'testuser' },
+                                },
+                              },
+                            ],
+                          },
                         },
-                      ],
+                      },
                     },
                   },
                 ],
@@ -126,6 +140,7 @@ describe('GitHubConnector', () => {
           expect.objectContaining({
             type: 'commit',
             timestamp: '2025-01-15T10:00:00Z',
+            text: 'Add feature',
             url: 'https://github.com/test/repo/commit/abc123',
           }),
           expect.objectContaining({
