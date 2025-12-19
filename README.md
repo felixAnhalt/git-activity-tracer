@@ -1,16 +1,21 @@
-# GitHub Activity CLI
+# Git Activity Tracer
 
-Fetch commits, PRs, and reviews for a given authenticated user from GitHub.
+Fetch commits, PRs/MRs, and reviews for a given authenticated user from GitHub or GitLab.
 
 ## Features
 
-- Fetches commits, pull requests, and code reviews
+- Multi-platform support: GitHub and GitLab (GitLab coming soon)
+- Fetches commits, pull/merge requests, and code reviews
 - Supports multiple output formats: console (default), JSON, CSV
 - Automatic pagination for repositories with more than 100 commits
 - Configurable base branches for tracking push events
 - Cross-platform configuration file support
 
 ## Setup
+
+The tool automatically detects which platforms to fetch from based on available tokens. You can use one or multiple platforms simultaneously!
+
+### GitHub
 
 1. Create a `.env` file in the project root with your GitHub token:
 
@@ -19,6 +24,27 @@ Fetch commits, PRs, and reviews for a given authenticated user from GitHub.
    ```
 
 2. Get a GitHub personal access token from https://github.com/settings/tokens
+
+### GitLab (Coming Soon)
+
+1. Add your GitLab token to the `.env` file:
+
+   ```bash
+   GITLAB_TOKEN=your_gitlab_token_here
+   ```
+
+2. Get a GitLab personal access token from https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html
+
+### Multi-Platform Usage
+
+Use both platforms at once by providing both tokens:
+
+```bash
+GH_TOKEN=your_github_token_here
+GITLAB_TOKEN=your_gitlab_token_here
+```
+
+The tool will automatically fetch from all platforms with available tokens and merge the results!
 
 ## Usage
 
@@ -73,6 +99,16 @@ The CLI uses a configuration file stored at `~/.git-activity-tracer/config.json`
 ```bash
 pnpm start -- --show-config
 ```
+
+### Automatic Platform Detection
+
+The tool automatically detects which platforms to use based on available environment variables:
+
+- If `GH_TOKEN` is set → Fetches from GitHub
+- If `GITLAB_TOKEN` is set → Fetches from GitLab; If `GITLAB_HOST` is set, uses that as the GitLab instance URL
+- If both are set → Fetches from both platforms and merges results
+
+No manual configuration needed!
 
 ### Customize Base Branches
 

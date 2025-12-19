@@ -1,7 +1,9 @@
 import { Octokit } from '@octokit/rest';
 import type { Dayjs } from 'dayjs';
+import type { Contribution } from '../types.js';
+import type { Configuration } from '../configuration.js';
+import type { Connector } from './types.js';
 import type {
-  Contribution,
   GraphQLResponse,
   GraphQLErrorResponse,
   GitHubEvent,
@@ -12,8 +14,7 @@ import type {
   GraphQLCommitRepoWithHistory,
   GraphQLPRNode,
   GraphQLReviewNode,
-} from '../types.js';
-import type { Configuration } from '../configuration.js';
+} from './github.types.js';
 
 export type { Contribution, ContributionType } from '../types.js';
 
@@ -125,7 +126,7 @@ const extractPayloadFromGraphQLResponse = (raw: unknown): GraphQLResponse | null
   return inner as GraphQLResponse;
 };
 
-export class GitHubConnector {
+export class GitHubConnector implements Connector {
   private octokit: Octokit;
   private configuration: Configuration;
 
@@ -144,6 +145,10 @@ export class GitHubConnector {
       this.octokit = octokitOrToken;
     }
     this.configuration = configuration;
+  }
+
+  getPlatformName(): string {
+    return 'GitHub';
   }
 
   async getUserLogin(): Promise<string> {
