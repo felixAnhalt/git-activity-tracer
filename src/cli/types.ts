@@ -13,6 +13,10 @@ export interface CliArguments {
   from?: string;
   /** End date in YYYY-MM-DD format, or undefined for default (today) */
   to?: string;
+  /** Fetch data for last week (Monday to Sunday) */
+  lastweek?: boolean;
+  /** Fetch data for last month (1st to last day) */
+  lastmonth?: boolean;
   withLinks: boolean;
   output: OutputFormat;
   showConfig: boolean;

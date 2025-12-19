@@ -84,7 +84,12 @@ export const runContributionReport = async (cliArguments: CliArguments): Promise
     // Initialize all available connectors
     const connectors = await initializeConnectors();
     const configuration = await loadConfiguration();
-    const { from, to } = parseRange(cliArguments.from, cliArguments.to);
+    const { from, to } = parseRange(
+      cliArguments.from,
+      cliArguments.to,
+      cliArguments.lastweek,
+      cliArguments.lastmonth,
+    );
 
     // Get platform names for logging
     const connectorsWithNames = connectors.map((connector) => ({

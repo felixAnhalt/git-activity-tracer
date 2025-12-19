@@ -18,6 +18,16 @@ export const parseCliArguments = (): CliArguments => {
       type: 'string',
       description: 'End date (YYYY-MM-DD). Defaults to today',
     })
+    .option('lastweek', {
+      type: 'boolean',
+      default: false,
+      description: 'Fetch data for last week (Monday to Sunday)',
+    })
+    .option('lastmonth', {
+      type: 'boolean',
+      default: false,
+      description: 'Fetch data for last month (1st to last day)',
+    })
     .option('with-links', {
       type: 'boolean',
       default: false,
@@ -46,6 +56,8 @@ export const parseCliArguments = (): CliArguments => {
   return {
     from: argv.from,
     to: argv.to,
+    lastweek: argv.lastweek,
+    lastmonth: argv.lastmonth,
     withLinks: argv['with-links'],
     output: argv.output as OutputFormat,
     showConfig: argv['show-config'],
