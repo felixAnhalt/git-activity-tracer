@@ -50,7 +50,7 @@ export class GitLabConnector implements Connector {
    */
   async getUserLogin(): Promise<string> {
     const user = (await this.gitlab.Users.showCurrentUser()) as GitLabUser;
-    if (!user?.username || typeof user.username !== 'string') {
+    if (!user?.username) {
       throw new Error('Unable to determine authenticated user username from GitLab.');
     }
     // Cache user ID for later use

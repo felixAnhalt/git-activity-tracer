@@ -6,9 +6,7 @@ import type { Connector } from './types.js';
 import type {
   GraphQLResponse,
   GraphQLErrorResponse,
-  GitHubEvent,
   GraphQLApiResponse,
-  EventsApiResponse,
   DateRange,
   DateRangeTimestamps,
   GraphQLCommitRepoWithHistory,
@@ -203,38 +201,6 @@ export class GitHubConnector implements Connector {
   }
 
   /**
-   * Fetches recent user events from GitHub Events API.
-   * Returns empty array on error (best-effort).
-   */
-  private async fetchEventsApiData(login: string): Promise<GitHubEvent[]> {
-    try {
-      const eventsResponse = await this.octokit.request('GET /users/{username}/events', {
-        username: login,
-        per_page: 100,
-      });
-
-      const rawData = (eventsResponse as EventsApiResponse).data;
-
-      if (!Array.isArray(rawData)) {
-        return [];
-      }
-
-      return rawData as GitHubEvent[];
-    } catch (error) {
-      // Log warnings for authentication or rate limit errors
-      if (error && typeof error === 'object' && 'status' in error) {
-        const status = (error as { status: number }).status;
-        if (status === 401) {
-          console.warn('Warning: GitHub Events API authentication failed. Check your token.');
-        } else if (status === 403) {
-          console.warn('Warning: GitHub Events API rate limit exceeded or access forbidden.');
-        }
-      }
-      return [];
-    }
-  }
-
-  /**
    * Parses ISO date strings to timestamps for efficient range checking.
    * @throws {Error} If date strings are invalid
    */
@@ -263,13 +229,15 @@ export class GitHubConnector implements Connector {
   /**
    * Fetches paginated commit history for a specific repository branch.
    * Continues fetching until all commits in the date range are retrieved.
+   * Filters commits to only include those authored by the authenticated user.
    */
   private async fetchPaginatedCommits(
     owner: string,
     name: string,
     branch: string,
     dateRange: DateRange,
-    initialCursor?: string,
+    initialCursor: string | undefined,
+    userLogin: string,
   ): Promise<Contribution[]> {
     const contributions: Contribution[] = [];
     let cursor = initialCursor;
@@ -309,6 +277,13 @@ export class GitHubConnector implements Connector {
                       messageHeadline?: string;
                       message?: string;
                       url?: string;
+                      author?: {
+                        name?: string;
+                        email?: string;
+                        user?: {
+                          login?: string;
+                        };
+                      };
                     }>;
                     pageInfo?: {
                       hasNextPage?: boolean;
@@ -326,6 +301,15 @@ export class GitHubConnector implements Connector {
 
         for (const commit of history.nodes) {
           if (!commit?.committedDate) continue;
+
+          // Filter commits by author: only include commits by the authenticated user
+          // Skip commits where:
+          // 1. Author has no linked GitHub account (authorLogin is undefined)
+          // 2. Author is a different GitHub user
+          const authorLogin = commit.author?.user?.login;
+          if (!authorLogin || authorLogin !== userLogin) {
+            continue;
+          }
 
           contributions.push({
             type: 'commit',
@@ -356,11 +340,13 @@ export class GitHubConnector implements Connector {
   /**
    * Extracts commit contributions from GraphQL response.
    * Now supports pagination for repositories with more than 100 commits.
+   * Filters commits to only include those authored by the authenticated user.
    */
   private async extractCommitContributions(
     commitsByRepository: GraphQLCommitRepoWithHistory[],
     dateRangeTimestamps: DateRangeTimestamps,
     dateRange: DateRange,
+    userLogin: string,
   ): Promise<Contribution[]> {
     const contributions: Contribution[] = [];
 
@@ -396,6 +382,15 @@ export class GitHubConnector implements Connector {
           continue;
         }
 
+        // Filter commits by author: only include commits by the authenticated user
+        // Skip commits where:
+        // 1. Author has no linked GitHub account (authorLogin is undefined)
+        // 2. Author is a different GitHub user
+        const authorLogin = commit.author?.user?.login;
+        if (!authorLogin || authorLogin !== userLogin) {
+          continue;
+        }
+
         contributions.push({
           type: 'commit',
           timestamp,
@@ -421,6 +416,7 @@ export class GitHubConnector implements Connector {
             branchName,
             dateRange,
             history.pageInfo.endCursor,
+            userLogin,
           );
 
           // Filter paginated commits by date range
@@ -486,70 +482,6 @@ export class GitHubConnector implements Connector {
   }
 
   /**
-   * Extracts commit contributions from push events to base branches.
-   * Filters by date range and base branch references from configuration.
-   */
-  private extractPushEventContributions(
-    events: GitHubEvent[],
-    dateRangeTimestamps: DateRangeTimestamps,
-  ): Contribution[] {
-    const contributions: Contribution[] = [];
-
-    // Build base branch references from configuration
-    const baseBranchReferences = new Set(
-      this.configuration.baseBranches.map((branch) => `refs/heads/${branch}`),
-    );
-
-    for (const event of events) {
-      if (!event || typeof event !== 'object') continue;
-      if (event.type !== 'PushEvent') continue;
-
-      const createdAt = event.created_at;
-      const reference = event.payload?.ref;
-
-      if (typeof createdAt !== 'string' || typeof reference !== 'string') continue;
-
-      const createdTimestamp = Date.parse(createdAt);
-      if (Number.isNaN(createdTimestamp)) continue;
-
-      if (
-        createdTimestamp < dateRangeTimestamps.fromTimestamp ||
-        createdTimestamp > dateRangeTimestamps.toTimestamp
-      ) {
-        continue;
-      }
-
-      if (!baseBranchReferences.has(reference)) continue;
-
-      const repositoryName = event.repo?.name;
-      const commits = event.payload?.commits;
-      const branchName = reference.replace('refs/heads/', '');
-
-      if (!Array.isArray(commits)) continue;
-
-      for (const commit of commits) {
-        if (!commit || typeof commit !== 'object') continue;
-
-        const sha = commit.sha;
-        const message = commit.message;
-        const url =
-          sha && repositoryName ? `https://github.com/${repositoryName}/commit/${sha}` : commit.url;
-
-        contributions.push({
-          type: 'commit',
-          timestamp: createdAt,
-          text: message,
-          url,
-          repository: repositoryName,
-          target: branchName,
-        });
-      }
-    }
-
-    return contributions;
-  }
-
-  /**
    * Deduplicates contributions by composite key: type|timestamp|url|text|repository|target.
    */
   private deduplicateContributions(contributions: Contribution[]): Contribution[] {
@@ -567,7 +499,9 @@ export class GitHubConnector implements Connector {
 
   /**
    * Fetches all contributions for the authenticated user within the date range.
-   * Combines GraphQL API (commits, PRs, reviews) and Events API (direct pushes).
+   * Uses GraphQL API to fetch commits (filtered by author), PRs, and reviews.
+   * Events API is not used for commits as it includes all commits in a push,
+   * not just those authored by the user.
    */
   async fetchContributions(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
     const login = await this.getUserLogin();
@@ -588,6 +522,7 @@ export class GitHubConnector implements Connector {
           contributionsCollection.commitContributionsByRepository ?? [],
           dateRangeTimestamps,
           dateRange,
+          login,
         )),
       );
 
@@ -604,9 +539,9 @@ export class GitHubConnector implements Connector {
       );
     }
 
-    const events = await this.fetchEventsApiData(login);
-
-    allContributions.push(...this.extractPushEventContributions(events, dateRangeTimestamps));
+    // Note: Events API is not used for commit contributions because PushEvents
+    // include all commits in the push, not just those authored by the user.
+    // The GraphQL API already provides accurate commit authorship information.
 
     return this.deduplicateContributions(allContributions);
   }

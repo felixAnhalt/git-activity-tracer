@@ -80,6 +80,10 @@ export interface GitHubEventCommit {
   sha?: string;
   message?: string;
   url?: string;
+  author?: {
+    name?: string;
+    email?: string;
+  };
 }
 
 export interface GitHubEventPayload {
@@ -91,18 +95,7 @@ export interface GitHubEventRepository {
   name?: string;
 }
 
-export interface GitHubEvent {
-  type?: string;
-  created_at?: string;
-  repo?: GitHubEventRepository;
-  payload?: GitHubEventPayload;
-}
-
 export interface GraphQLApiResponse {
-  data?: unknown;
-}
-
-export interface EventsApiResponse {
   data?: unknown;
 }
 
