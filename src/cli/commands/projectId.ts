@@ -1,4 +1,4 @@
-import { loadConfiguration, saveConfiguration } from '../../configuration.js';
+import { loadConfiguration, saveConfiguration } from '../../lib/config/index.js';
 
 /**
  * Parses the project-id command arguments.

@@ -1,15 +1,16 @@
 import { parseCliArguments } from './parser.js';
-import { handleShowConfigCommand } from './commands/show-config.js';
-import { handleProjectIdCommand } from './commands/project-id.js';
+import { handleShowConfigCommand } from './commands/showConfig.js';
+import { handleProjectIdCommand } from './commands/projectId.js';
 import { runContributionReport } from './commands/report.js';
+import { handleError } from './errorHandler.js';
 
 /**
  * Main CLI entry point.
  * Parses arguments and routes to appropriate command handler.
  *
  * Handles:
- * - --show-config: Display configuration and exit
- * - --project-id: Manage repository project ID mappings
+ * - config: Display configuration and exit
+ * - project-id: Manage repository project ID mappings
  * - default: Run contribution report
  */
 export const main = async () => {
@@ -17,7 +18,7 @@ export const main = async () => {
     const cliArguments = parseCliArguments();
 
     if (cliArguments.showConfig) {
-      handleShowConfigCommand();
+      await handleShowConfigCommand();
       return;
     }
 
@@ -28,7 +29,6 @@ export const main = async () => {
 
     await runContributionReport(cliArguments);
   } catch (error) {
-    console.error('Fatal error:', error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    handleError(error);
   }
 };

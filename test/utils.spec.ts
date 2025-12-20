@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCurrentWeekRange } from '../src/utils.js';
+import { getCurrentWeekRange } from '../src/lib/time/dateRanges.js';
 import dayjs from 'dayjs';
 
 describe('getCurrentWeekRange', () => {

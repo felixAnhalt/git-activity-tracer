@@ -1,5 +1,6 @@
 import dayjs from 'dayjs';
 import weekday from 'dayjs/plugin/weekday.js';
+import { ValidationError } from '../errors/validationError.js';
 
 dayjs.extend(weekday);
 
@@ -86,8 +87,17 @@ export const parseRange = (
   const t = to ?? today;
   const parsedFrom = dayjs(f);
   const parsedTo = dayjs(t);
-  if (!parsedFrom.isValid() || !parsedTo.isValid()) {
-    throw new Error(`Invalid date range: from=${f} to=${t}`);
+  if (!parsedFrom.isValid()) {
+    throw new ValidationError(`Invalid start date: ${f}`, [
+      'Use YYYY-MM-DD format (e.g., 2025-01-15)',
+      'Or use a preset: last-week, last-month, this-week',
+    ]);
+  }
+  if (!parsedTo.isValid()) {
+    throw new ValidationError(`Invalid end date: ${t}`, [
+      'Use YYYY-MM-DD format (e.g., 2025-01-31)',
+      'Or use a preset: last-week, last-month, this-week',
+    ]);
   }
   if (parsedFrom.isAfter(parsedTo)) {
     return { from: parsedTo, to: parsedFrom };

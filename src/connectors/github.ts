@@ -1,8 +1,9 @@
 import { Octokit } from '@octokit/rest';
 import type { Dayjs } from 'dayjs';
 import type { Contribution } from '../types.js';
-import type { Configuration } from '../configuration.js';
+import type { Configuration } from '../lib/config/index.js';
 import type { Connector } from './types.js';
+import { deduplicateContributions } from '../lib/services/contributionDeduplicator.js';
 import type {
   GraphQLResponse,
   GraphQLErrorResponse,
@@ -485,16 +486,7 @@ export class GitHubConnector implements Connector {
    * Deduplicates contributions by composite key: type|timestamp|url|text|repository|target.
    */
   private deduplicateContributions(contributions: Contribution[]): Contribution[] {
-    const uniqueContributions = new Map<string, Contribution>();
-
-    for (const contribution of contributions) {
-      const key = `${contribution.type}|${contribution.timestamp}|${contribution.url ?? ''}|${contribution.text ?? ''}|${contribution.repository ?? ''}|${contribution.target ?? ''}`;
-      if (!uniqueContributions.has(key)) {
-        uniqueContributions.set(key, contribution);
-      }
-    }
-
-    return Array.from(uniqueContributions.values());
+    return deduplicateContributions(contributions);
   }
 
   /**

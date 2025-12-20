@@ -1,8 +1,8 @@
 import { createGitHubConnector } from '../connectors/github.js';
 import { createGitLabConnector } from '../connectors/gitlab.js';
-import { loadConfiguration } from '../configuration.js';
+import { loadConfiguration } from './config/index.js';
 import type { Connector } from '../connectors/types.js';
-import type { Configuration } from '../configuration.js';
+import type { Configuration } from './config/index.js';
 
 /**
  * Attempts to create a GitHub connector if GH_TOKEN is available.

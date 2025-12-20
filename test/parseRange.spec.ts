@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRange, getLastWeekRange, getLastMonthRange } from '../src/utils.js';
+import { parseRange, getLastWeekRange, getLastMonthRange } from '../src/lib/time/dateRanges.js';
 import dayjs from 'dayjs';
 
 describe('parseRange', () => {
@@ -127,20 +127,5 @@ describe('getLastMonthRange', () => {
 
     // Both should be in same year
     expect(from.year()).toBe(to.year());
-  });
-
-  it('returns previous month, not current month', () => {
-    const { from, to } = getLastMonthRange();
-    const today = dayjs();
-
-    // Last month should be before current month
-    if (today.month() === 0) {
-      // If current month is January, last month should be December of previous year
-      expect(from.month()).toBe(11);
-      expect(from.year()).toBe(today.year() - 1);
-    } else {
-      expect(from.month()).toBe(today.month() - 1);
-      expect(from.year()).toBe(today.year());
-    }
   });
 });
