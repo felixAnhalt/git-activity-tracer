@@ -339,8 +339,8 @@ export class GitHubConnector implements Connector {
   }
 
   /**
-   * Extracts commit contributions from GraphQL response.
-   * Now supports pagination for repositories with more than 100 commits.
+   * Extracts commit contributions from GraphQL response with parallelized pagination.
+   * Processes multiple repositories in parallel for better performance.
    * Filters commits to only include those authored by the authenticated user.
    */
   private async extractCommitContributions(
@@ -349,21 +349,22 @@ export class GitHubConnector implements Connector {
     dateRange: DateRange,
     userLogin: string,
   ): Promise<Contribution[]> {
-    const contributions: Contribution[] = [];
-
-    for (const repositoryWrapper of commitsByRepository) {
+    // Process all repositories in parallel
+    const repositoryPromises = commitsByRepository.map(async (repositoryWrapper) => {
       const repository = repositoryWrapper.repository;
-      if (!repository) continue;
+      if (!repository) return [];
 
       const repositoryName = repository.nameWithOwner;
       const defaultBranchRef = repository.defaultBranchRef;
 
       // Handle repositories without a default branch (empty repositories)
-      if (!defaultBranchRef?.target?.history) continue;
+      if (!defaultBranchRef?.target?.history) return [];
 
       const branchName = defaultBranchRef.name;
       const history = defaultBranchRef.target.history;
       const commitNodes = history.nodes ?? [];
+
+      const contributions: Contribution[] = [];
 
       // Process initial batch of commits
       for (const commit of commitNodes) {
@@ -384,9 +385,6 @@ export class GitHubConnector implements Connector {
         }
 
         // Filter commits by author: only include commits by the authenticated user
-        // Skip commits where:
-        // 1. Author has no linked GitHub account (authorLogin is undefined)
-        // 2. Author is a different GitHub user
         const authorLogin = commit.author?.user?.login;
         if (!authorLogin || authorLogin !== userLogin) {
           continue;
@@ -433,9 +431,12 @@ export class GitHubConnector implements Connector {
           }
         }
       }
-    }
 
-    return contributions;
+      return contributions;
+    });
+
+    const allResults = await Promise.all(repositoryPromises);
+    return allResults.flat();
   }
 
   /**
@@ -492,16 +493,18 @@ export class GitHubConnector implements Connector {
   /**
    * Fetches all contributions for the authenticated user within the date range.
    * Uses GraphQL API to fetch commits (filtered by author), PRs, and reviews.
-   * Events API is not used for commits as it includes all commits in a push,
-   * not just those authored by the user.
+   * Optimized with timestamps and parallel extraction where possible.
    */
   async fetchContributions(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
+    const startTime = Date.now();
     const login = await this.getUserLogin();
 
     const dateRange: DateRange = {
       from: from.toISOString(),
       to: to.toISOString(),
     };
+
+    console.log(`[${this.formatLogTimestamp()}] Fetching contributions from GitHub...`);
 
     const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
     const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
@@ -531,9 +534,10 @@ export class GitHubConnector implements Connector {
       );
     }
 
-    // Note: Events API is not used for commit contributions because PushEvents
-    // include all commits in the push, not just those authored by the user.
-    // The GraphQL API already provides accurate commit authorship information.
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(
+      `[${this.formatLogTimestamp()}] GitHub: found ${allContributions.length} contributions (took ${duration}s)`,
+    );
 
     return this.deduplicateContributions(allContributions);
   }
