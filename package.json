@@ -1,6 +1,6 @@
 {
   "name": "@tmegit/git-activity-tracer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Track your development activity across GitHub and GitLab. Fetch commits, pull/merge requests, and code reviews from your authenticated accounts.",
   "type": "module",
   "main": "dist/index.js",
