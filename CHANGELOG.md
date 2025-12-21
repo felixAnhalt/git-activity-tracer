@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/felixAnhalt/git-activity-tracer/compare/v1.0.0...v1.0.1) (2025-12-21)
+
+
+### Bug Fixes
+
+* **tests:** add trailing space to URL log output for consistency ([#6](https://github.com/felixAnhalt/git-activity-tracer/issues/6)) ([96738a7](https://github.com/felixAnhalt/git-activity-tracer/commit/96738a7049cba14d6ccdc851102fd33b31c64823))
+
 # 1.0.0 (2025-12-21)
 
 
