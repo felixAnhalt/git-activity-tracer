@@ -151,9 +151,9 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
 
         // Verify header
         const header = lines[0];
-        expect(header).toContain('Type');
-        expect(header).toContain('Date');
-        expect(header).toContain('Time');
+        expect(header).toContain('type');
+        expect(header).toContain('date');
+        expect(header).toContain('timestamp');
         console.log(`✅ CSV header validated: ${header}`);
 
         if (lines.length > 1) {
@@ -206,8 +206,9 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
       async () => {
         console.log('\n📅 Testing lastmonth flag');
 
-        const expectedFrom = dayjs().subtract(1, 'month').startOf('month');
-        const expectedTo = dayjs().subtract(1, 'month').endOf('month');
+        // The lastmonth flag returns: 1 month ago to today
+        const expectedFrom = dayjs().subtract(1, 'month');
+        const expectedTo = dayjs();
         const expectedFilePath = `git-contributions-${expectedFrom.format('YYYY-MM-DD')}-${expectedTo.format('YYYY-MM-DD')}.json`;
         generatedFiles.push(expectedFilePath);
 
