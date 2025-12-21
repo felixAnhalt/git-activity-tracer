@@ -1,6 +1,13 @@
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import type { OutputFormat } from '../types.js';
 import type { CliArguments } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
 
 /**
  * Parses command-line arguments using commander.
@@ -14,7 +21,7 @@ export const parseCliArguments = (): CliArguments => {
   program
     .name('git-activity-tracer')
     .description('Track development activity across GitHub and GitLab')
-    .version('1.0.0')
+    .version(packageJson.version)
     .argument('[from]', 'Start date (YYYY-MM-DD or preset: last-week, last-month, this-week)')
     .argument('[to]', 'End date (YYYY-MM-DD)')
     .option('-f, --format <type>', 'Output format', 'console')

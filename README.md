@@ -2,11 +2,39 @@
 
 **Track your development activity across GitHub and GitLab.** Fetch commits, pull/merge requests, and code reviews from your authenticated accounts.
 
+## Installation
+
+### Global Installation (Recommended)
+
+```bash
+npm install -g @tmegit/git-activity-tracer
+```
+
+### Using npx (No installation required)
+
+```bash
+npx @tmegit/git-activity-tracer --from 2025-01-01 --to 2025-01-31
+```
+
+### Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/felixAnhalt/git-activity-tracer.git
+cd git-activity-tracer
+
+# Install dependencies
+pnpm install
+
+# Run locally
+pnpm start
+```
+
 ## Quick Start
 
 ### Required Environment Variables
 
-Create a `.env` file in the project root with your platform tokens:
+Create a `.env` file (for local development) or set environment variables with your platform tokens:
 
 ```bash
 # GitHub (optional)
@@ -27,18 +55,18 @@ At least one token (GitHub or GitLab) is required. Both can be used simultaneous
 ### Basic Usage
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Fetch today's activity
-pnpm start
+# Fetch activity for the current week (Monday to today)
+git-activity-tracer
 
 # Fetch activity for a specific date range
-pnpm start --from 2025-01-01 --to 2025-01-31
+git-activity-tracer --from 2025-01-01 --to 2025-01-31
 
 # Export as JSON or CSV
-pnpm start --output json
-pnpm start --output csv
+git-activity-tracer --output json
+git-activity-tracer --output csv
+
+# Using npx (no installation)
+npx @tmegit/git-activity-tracer --from 2025-01-01 --to 2025-01-31
 ```
 
 ## Features
@@ -78,13 +106,16 @@ The tool automatically detects available tokens and fetches from all configured 
 
 ```bash
 # Current week (Monday to today)
-pnpm start
+git-activity-tracer
 
 # Specific date range
-pnpm start --from 2025-01-01 --to 2025-01-31
+git-activity-tracer --from 2025-01-01 --to 2025-01-31
 
 # Single day
-pnpm start --from 2025-12-19 --to 2025-12-19
+git-activity-tracer --from 2025-12-19 --to 2025-12-19
+
+# Using npx
+npx @tmegit/git-activity-tracer --from 2025-01-01 --to 2025-01-31
 ```
 
 ### Output Formats
@@ -92,26 +123,26 @@ pnpm start --from 2025-12-19 --to 2025-12-19
 **Console** (human-readable, grouped by date):
 
 ```bash
-pnpm start --from 2025-11-11 --to 2025-11-12
+git-activity-tracer --from 2025-11-11 --to 2025-11-12
 ```
 
 **JSON** (for programmatic processing):
 
 ```bash
-pnpm start --from 2025-11-11 --to 2025-11-12 --output json
+git-activity-tracer --from 2025-11-11 --to 2025-11-12 --output json
 ```
 
 **CSV** (for spreadsheets):
 
 ```bash
-pnpm start --from 2025-11-11 --to 2025-11-12 --output csv
+git-activity-tracer --from 2025-11-11 --to 2025-11-12 --output csv
 ```
 
 ### Include URLs
 
 ```bash
 # Show contribution URLs in console output
-pnpm start --with-links
+git-activity-tracer --with-links
 ```
 
 ## Project ID Mapping
@@ -122,27 +153,27 @@ Map repositories to project IDs for billing and time tracking. Project IDs autom
 
 ```bash
 # List all project ID mappings
-pnpm start project-id list
+git-activity-tracer project-id list
 
 # Add a mapping
-pnpm start project-id add owner/repository PROJECT-123
+git-activity-tracer project-id add owner/repository PROJECT-123
 
 # Remove a mapping
-pnpm start project-id remove owner/repository
+git-activity-tracer project-id remove owner/repository
 ```
 
 ### Example Workflow
 
 ```bash
 # Configure your billable projects
-pnpm start project-id add acme-corp/website 1727783287A
-pnpm start project-id add globex/mobile-app 2849372837B
+git-activity-tracer project-id add acme-corp/website 1727783287A
+git-activity-tracer project-id add globex/mobile-app 2849372837B
 
 # List configured mappings
-pnpm start project-id list
+git-activity-tracer project-id list
 
 # Generate report - project IDs automatically included
-pnpm start --from 2025-12-01 --to 2025-12-19 --output csv
+git-activity-tracer --from 2025-12-01 --to 2025-12-19 --output csv
 ```
 
 ### Output Format
@@ -185,7 +216,7 @@ The tool uses a configuration file at `~/.git-activity-tracer/config.json` for c
 ### View Configuration
 
 ```bash
-pnpm start config
+git-activity-tracer config
 ```
 
 ### Platform Detection
@@ -229,7 +260,7 @@ GITLAB_TOKEN=your_token_here
 pnpm build
 
 # Run the compiled version
-node dist/src/index.js --from 2025-01-01 --to 2025-01-31
+node dist/index.js --from 2025-01-01 --to 2025-01-31
 ```
 
 ## Development
@@ -254,6 +285,62 @@ pnpm run lint
 pnpm run format
 ```
 
+## Contributing
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning and releases.
+
+### Commit Message Format
+
+Use the following prefixes for your commits:
+
+- `feat:` - A new feature (triggers minor version bump: 1.0.0 → 1.1.0)
+- `fix:` - A bug fix (triggers patch version bump: 1.0.0 → 1.0.1)
+- `docs:` - Documentation changes only
+- `style:` - Code style changes (formatting, missing semicolons, etc.)
+- `refactor:` - Code refactoring without changing functionality
+- `perf:` - Performance improvements
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks, dependency updates, etc.
+
+**Breaking changes** (triggers major version bump: 1.0.0 → 2.0.0):
+
+- Add `BREAKING CHANGE:` in commit body, or
+- Add `!` after type: `feat!:` or `fix!:`
+
+### Examples
+
+```bash
+# Feature (minor bump)
+git commit -m "feat: add support for Bitbucket integration"
+
+# Bug fix (patch bump)
+git commit -m "fix: resolve date parsing issue for leap years"
+
+# Breaking change (major bump)
+git commit -m "feat!: change API response format
+
+BREAKING CHANGE: The output format has changed from array to object"
+
+# Multiple lines
+git commit -m "fix: correct timezone handling
+
+- Fix UTC conversion bug
+- Add timezone tests
+- Update documentation"
+```
+
+### Automated Releases
+
+When you push commits to `main` or `master`:
+
+1. **semantic-release** analyzes commit messages
+2. Determines the next version based on commit types
+3. Updates `package.json` and `CHANGELOG.md`
+4. Creates a GitHub release with release notes
+5. Publishes to npm automatically
+
+No manual versioning needed - just write good commit messages!
+
 ## API Limitations
 
 - **GitHub**: Fetches up to 50 repositories, 100 commits per repository
@@ -263,4 +350,4 @@ For most users, these limits are sufficient. Very active users with thousands of
 
 ## License
 
-MIT
+Apache-2.0 License © Felix Anhalt

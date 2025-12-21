@@ -1,8 +1,15 @@
 {
-  "name": "gh-activity-cli",
-  "version": "1.0.0",
+  "name": "@tmegit/git-activity-tracer",
+  "version": "0.0.1",
+  "description": "Track your development activity across GitHub and GitLab. Fetch commits, pull/merge requests, and code reviews from your authenticated accounts.",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "git-activity-tracer": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "start": "tsx src/index.ts",
     "start:dev": "tsx src/index.ts",
@@ -11,12 +18,37 @@
     "test:watch": "vitest --watch",
     "lint": "eslint 'src/**/*.ts'",
     "format": "prettier --write 'src/**/*.ts'",
+    "prepublishOnly": "pnpm run lint && pnpm test && pnpm run build",
     "prepare": ""
   },
+  "keywords": [
+    "git",
+    "github",
+    "gitlab",
+    "activity",
+    "tracker",
+    "contributions",
+    "commits",
+    "pull-requests",
+    "merge-requests",
+    "code-review",
+    "developer-tools",
+    "cli"
+  ],
+  "author": "Felix Anhalt",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/felixAnhalt/git-activity-tracer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/felixAnhalt/git-activity-tracer/issues"
+  },
+  "homepage": "https://github.com/felixAnhalt/git-activity-tracer#readme",
   "dependencies": {
     "@gitbeaker/rest": "43.8.0",
     "@octokit/rest": "22.0.1",
-    "chalk": "^5.6.2",
+    "chalk": "5.6.2",
     "commander": "14.0.2",
     "dayjs": "1.11.19",
     "dotenv": "17.2.3",
@@ -25,6 +57,9 @@
   },
   "devDependencies": {
     "@octokit/openapi-types": "27.0.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.2",
     "@types/node": "24.10.1",
     "@types/yargs": "17.0.35",
     "@typescript-eslint/eslint-plugin": "8.50.0",
@@ -32,6 +67,7 @@
     "eslint": "9.39.2",
     "eslint-config-prettier": "10.1.8",
     "prettier": "3.7.4",
+    "semantic-release": "^25.0.2",
     "ts-node": "10.9.2",
     "tsx": "4.19.2",
     "typescript": "5.9.3",
