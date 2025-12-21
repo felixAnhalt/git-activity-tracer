@@ -331,7 +331,7 @@ git commit -m "fix: correct timezone handling
 
 ### Automated Releases
 
-When you push commits to `main` or `master`:
+When you push commits to `main`:
 
 1. **semantic-release** analyzes commit messages
 2. Determines the next version based on commit types
