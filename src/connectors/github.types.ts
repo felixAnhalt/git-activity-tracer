@@ -76,27 +76,6 @@ export type GraphQLErrorResponse = {
   errors?: Array<{ message: string; type?: string; path?: string[] }>;
 };
 
-export interface GitHubEventCommit {
-  sha?: string;
-  message?: string;
-  url?: string;
-  author?: {
-    name?: string;
-    email?: string;
-  };
-}
-
-export interface GitHubEventPayload {
-  ref?: string;
-  commits?: GitHubEventCommit[];
-  head?: string; // SHA of the most recent commit after the push
-  before?: string; // SHA of the most recent commit before the push
-}
-
-export interface GitHubEventRepository {
-  name?: string;
-}
-
 export interface GraphQLApiResponse {
   data?: unknown;
 }
@@ -109,17 +88,4 @@ export interface DateRange {
 export interface DateRangeTimestamps {
   fromTimestamp: number;
   toTimestamp: number;
-}
-
-export interface GitHubEvent {
-  type?: string | null;
-  created_at?: string | null;
-  repo?: {
-    name?: string;
-  };
-  payload?: GitHubEventPayload;
-}
-
-export interface EventsApiResponse {
-  data: GitHubEvent[];
 }
