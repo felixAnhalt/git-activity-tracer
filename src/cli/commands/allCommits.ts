@@ -23,6 +23,10 @@ export const runAllCommitsReport = async (cliArguments: CliArguments): Promise<v
     cliArguments.lastmonth,
   );
 
+  console.log(
+    `Generating all-commits report from ${from.format('YYYY-MM-DD')} to ${to.format('YYYY-MM-DD')}...\n`,
+  );
+
   // Generate all-commits report using service layer
   const commits = await generateCommitsReport(connectors, configuration, from, to);
 
