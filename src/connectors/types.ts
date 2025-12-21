@@ -15,6 +15,15 @@ export interface Connector {
   fetchContributions(from: Dayjs, to: Dayjs): Promise<Contribution[]>;
 
   /**
+   * Fetches all commits from ALL branches for the authenticated user within the date range.
+   * Unlike fetchContributions which filters by base branches, this fetches commits from all branches.
+   * @param from - Start date of the range
+   * @param to - End date of the range
+   * @returns Array of commit contributions only
+   */
+  fetchAllCommits(from: Dayjs, to: Dayjs): Promise<Contribution[]>;
+
+  /**
    * Gets the authenticated user's login/username.
    * @returns User login/username
    */

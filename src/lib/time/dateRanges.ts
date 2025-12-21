@@ -100,7 +100,7 @@ export const parseRange = (
     ]);
   }
   if (parsedFrom.isAfter(parsedTo)) {
-    return { from: parsedTo, to: parsedFrom };
+    return { from: parsedTo.startOf('day'), to: parsedFrom.endOf('day') };
   }
-  return { from: parsedFrom, to: parsedTo };
+  return { from: parsedFrom.startOf('day'), to: parsedTo.endOf('day') };
 };

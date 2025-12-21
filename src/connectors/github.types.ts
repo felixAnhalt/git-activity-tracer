@@ -89,6 +89,8 @@ export interface GitHubEventCommit {
 export interface GitHubEventPayload {
   ref?: string;
   commits?: GitHubEventCommit[];
+  head?: string; // SHA of the most recent commit after the push
+  before?: string; // SHA of the most recent commit before the push
 }
 
 export interface GitHubEventRepository {
@@ -107,4 +109,17 @@ export interface DateRange {
 export interface DateRangeTimestamps {
   fromTimestamp: number;
   toTimestamp: number;
+}
+
+export interface GitHubEvent {
+  type?: string;
+  created_at?: string;
+  repo?: {
+    name?: string;
+  };
+  payload?: GitHubEventPayload;
+}
+
+export interface EventsApiResponse {
+  data: GitHubEvent[];
 }

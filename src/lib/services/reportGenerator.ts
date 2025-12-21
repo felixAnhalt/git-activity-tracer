@@ -101,14 +101,14 @@ export const generateReport = async (
 
 /**
  * Generates a commits-only report for the given date range.
- * Fetches all contributions from connectors, filters to commits only,
- * enriches with project IDs, and sorts by timestamp.
+ * Fetches ALL commits from ALL branches (not filtered by base branches).
+ * Enriches with project IDs and sorts by timestamp.
  *
  * @param connectors - Array of connector instances
  * @param configuration - Application configuration
  * @param from - Start date for the report
  * @param to - End date for the report
- * @returns Array of commit contributions only
+ * @returns Array of commit contributions from all branches
  */
 export const generateCommitsReport = async (
   connectors: Connector[],
@@ -124,15 +124,40 @@ export const generateCommitsReport = async (
   console.log(
     `Initialized ${connectors.length} connector(s): ${connectorsWithNames.map((c) => c.name).join(', ')}`,
   );
-  console.log('Fetching commits only (excluding PRs and reviews)...\n');
+  console.log('Fetching all commits from all branches...\n');
 
-  const allContributions = await fetchAndMergeContributions(connectorsWithNames, from, to);
+  const allCommits: Contribution[] = [];
 
-  // Filter to commits only
-  const commits = allContributions.filter((contribution) => contribution.type === 'commit');
+  // Fetch commits from all connectors in parallel using fetchAllCommits
+  const results = await Promise.allSettled(
+    connectorsWithNames.map(async ({ connector, name }) => {
+      console.log(`Fetching commits from ${name}...`);
+      const commits = await connector.fetchAllCommits(from, to);
+      console.log(`✓ Found ${commits.length} commits from ${name}`);
+      return commits;
+    }),
+  );
 
+  // Collect successful results
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      allCommits.push(...result.value);
+    } else {
+      console.warn(`Warning: Failed to fetch from a connector: ${result.reason}`);
+    }
+  }
+
+  // Deduplicate commits
+  const uniqueCommits = deduplicateContributions(allCommits);
+
+  // Sort by timestamp (newest first)
+  const sortedCommits = uniqueCommits.sort((a, b) => {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+
+  // Enrich with project IDs
   const enrichedCommits = enrichContributionsWithProjectIds(
-    commits,
+    sortedCommits,
     configuration.repositoryProjectIds ?? {},
   );
 

@@ -13,6 +13,8 @@ import type {
   GraphQLCommitRepoWithHistory,
   GraphQLPRNode,
   GraphQLReviewNode,
+  GitHubEvent,
+  GitHubEventPayload,
 } from './github.types.js';
 
 export type { Contribution, ContributionType } from '../types.js';
@@ -536,6 +538,211 @@ export class GitHubConnector implements Connector {
     // The GraphQL API already provides accurate commit authorship information.
 
     return this.deduplicateContributions(allContributions);
+  }
+
+  /**
+   * Fetches events from GitHub Events API.
+   * Tries both public and private endpoints to get complete event data.
+   *
+   * @param login - GitHub username
+   * @returns Array of GitHub events
+   */
+  private async fetchEventsApiData(login: string): Promise<GitHubEvent[]> {
+    try {
+      // Try fetching from user-specific events endpoint (includes both public and authenticated user's private events)
+      // This endpoint is better than /users/{username}/events as it includes private repo events
+      const eventsResponse = await this.octokit.request('GET /users/{username}/events', {
+        username: login,
+        per_page: 100,
+      });
+
+      const rawData = eventsResponse.data;
+
+      if (!Array.isArray(rawData)) {
+        return [];
+      }
+
+      return rawData as GitHubEvent[];
+    } catch (error) {
+      // Log warnings for authentication or rate limit errors
+      if (error && typeof error === 'object' && 'status' in error) {
+        const status = (error as { status: number }).status;
+        if (status === 401) {
+          console.warn('Warning: GitHub Events API authentication failed. Check your token.');
+        } else if (status === 403) {
+          console.warn('Warning: GitHub Events API rate limit exceeded or access forbidden.');
+        } else {
+          console.warn(
+            `Warning: GitHub Events API returned status ${status}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      } else {
+        console.warn(
+          `Warning: Error fetching from GitHub Events API: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Fetches all commits from ALL branches using GitHub Events API.
+   * Unlike fetchContributions which filters by base branches and authorship,
+   * this method returns all commits the user pushed to any branch.
+   *
+   * Limitations of GitHub Events API:
+   * - Maximum 300 events per user
+   * - Events older than 90 days are not available
+   * - Commit details may be empty for some push events
+   *
+   * @param from - Start date
+   * @param to - End date
+   * @returns Array of commit contributions from all branches
+   */
+  async fetchAllCommits(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
+    const login = await this.getUserLogin();
+    const contributions: Contribution[] = [];
+
+    const fromTimestamp = from.valueOf();
+    const toTimestamp = to.valueOf();
+
+    try {
+      // Fetch events using pagination to get up to 300 events
+      const events = await this.octokit.paginate(
+        'GET /users/{username}/events',
+        {
+          username: login,
+          per_page: 100,
+        },
+        (response, done) => {
+          // Stop pagination if we've gone past the date range
+          const lastEvent = response.data[response.data.length - 1];
+          if (lastEvent && lastEvent.created_at) {
+            const lastEventTime = new Date(lastEvent.created_at).getTime();
+            if (lastEventTime < fromTimestamp) {
+              done();
+            }
+          }
+          return response.data;
+        },
+      );
+
+      // Process PushEvents to extract commits
+      for (const event of events) {
+        if (event.type !== 'PushEvent') continue;
+        if (!event.created_at) continue;
+
+        const eventTimestamp = new Date(event.created_at).getTime();
+
+        // Filter by date range
+        if (eventTimestamp < fromTimestamp || eventTimestamp > toTimestamp) {
+          continue;
+        }
+
+        const payload = event.payload as GitHubEventPayload;
+        const repository = event.repo?.name;
+        const ref = payload?.ref;
+        const branchName = ref?.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : ref;
+
+        // Check if commits array exists and has data (this rarely happens in Events API)
+        if (payload?.commits && Array.isArray(payload.commits) && payload.commits.length > 0) {
+          // Extract each commit from the push event
+          for (const commit of payload.commits) {
+            if (!commit.message) continue;
+
+            contributions.push({
+              type: 'commit',
+              timestamp: event.created_at,
+              text: commit.message.split('\n')[0], // First line of commit message
+              url: commit.url,
+              repository,
+              target: branchName,
+            });
+          }
+        } else if (payload?.head && payload?.before && repository) {
+          // Events API doesn't include commit details, so fetch them using Commits API
+          // Use compare endpoint to get commits between before and after SHAs
+          try {
+            const [owner, repo] = repository.split('/');
+            if (!owner || !repo) continue;
+
+            const comparison = await this.octokit.rest.repos.compareCommits({
+              owner,
+              repo,
+              base: payload.before,
+              head: payload.head,
+            });
+
+            // Extract commits from comparison and filter by authenticated user
+            if (comparison.data.commits && comparison.data.commits.length > 0) {
+              for (const commit of comparison.data.commits) {
+                // Only include commits authored by the authenticated user
+                if (commit.author?.login === login || commit.committer?.login === login) {
+                  contributions.push({
+                    type: 'commit',
+                    timestamp: event.created_at,
+                    text: commit.commit.message.split('\n')[0], // First line of commit message
+                    url: commit.html_url,
+                    repository,
+                    target: branchName,
+                  });
+                }
+              }
+            } else {
+              // No commits in comparison, create fallback entry
+              contributions.push({
+                type: 'commit',
+                timestamp: event.created_at,
+                text: `Push to ${branchName}`,
+                repository,
+                target: branchName,
+              });
+            }
+          } catch (error) {
+            // If fetching commits fails (e.g., commits deleted, force push), create fallback entry
+            console.warn(
+              `Warning: Could not fetch commits for ${repository} ${branchName}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            contributions.push({
+              type: 'commit',
+              timestamp: event.created_at,
+              text: `Push to ${branchName}`,
+              repository,
+              target: branchName,
+            });
+          }
+        } else {
+          // Missing required payload data, create fallback entry
+          contributions.push({
+            type: 'commit',
+            timestamp: event.created_at,
+            text: `Push to ${branchName || 'unknown branch'}`,
+            repository,
+            target: branchName,
+          });
+        }
+      }
+    } catch (error) {
+      // Log specific warnings for authentication or rate limit errors
+      if (error && typeof error === 'object' && 'status' in error) {
+        const status = (error as { status: number }).status;
+        if (status === 401) {
+          console.warn('Warning: GitHub Events API authentication failed. Check your token.');
+        } else if (status === 403) {
+          console.warn('Warning: GitHub Events API rate limit exceeded or access forbidden.');
+        } else {
+          console.warn(
+            `Warning: Error fetching commits from GitHub Events API: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      } else {
+        console.warn(
+          `Warning: Error fetching commits from GitHub Events API: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    return this.deduplicateContributions(contributions);
   }
 }
 

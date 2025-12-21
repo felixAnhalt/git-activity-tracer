@@ -103,6 +103,27 @@ The tool automatically detects available tokens and fetches from all configured 
 | `project-id`        | Manage repository project ID mappings           | -                      |
 | `commits`           | Show commits-only report (see 'Usage Examples') | -                      |
 
+### Commits Command
+
+The `commits` command shows only commit contributions (excluding PRs and reviews) with full commit messages and branch names:
+
+```bash
+# Get all commits for current week
+git-activity-tracer commits
+
+# Get commits for specific date range
+git-activity-tracer commits 2025-12-01 2025-12-31
+
+# Export to CSV
+git-activity-tracer commits --format csv
+```
+
+**What commits are shown:**
+
+- **GitHub**: Commits from your contribution history (default branch commits and merged PR commits). Very recent commits may take a few minutes to appear as GitHub indexes them.
+- **GitLab**: All pushed commits from all branches (uses Events API).
+
+**Note**: GitHub's APIs don't provide an efficient way to fetch commits from all unmerged feature branches. Commits appear once they're merged to the default branch or included in a pull request.
 
 ## Usage Examples
 

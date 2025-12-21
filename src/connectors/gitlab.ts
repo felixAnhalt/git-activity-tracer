@@ -374,6 +374,86 @@ export class GitLabConnector implements Connector {
 
     return this.deduplicateContributions(allContributions);
   }
+
+  /**
+   * Fetches all commits from ALL branches using GitLab Events API.
+   * Unlike fetchContributions which filters by base branches,
+   * this method returns all commits the user pushed to any branch.
+   *
+   * @param from - Start date
+   * @param to - End date
+   * @returns Array of commit contributions from all branches
+   */
+  async fetchAllCommits(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
+    const userId = await this.getUserId();
+    const dateRangeTimestamps = this.parseDateRangeTimestamps({
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+
+    try {
+      // Fetch all events (not filtered by base branches)
+      const events = (await this.gitlab.Events.all({ userId, maxPages: 10 })) as GitLabEvent[];
+      const contributions: Contribution[] = [];
+
+      // Cache projects to avoid repeated API calls
+      const projectCache = new Map<number, GitLabProject | null>();
+
+      for (const event of events) {
+        if (!event || typeof event !== 'object') continue;
+        if (event.action_name !== 'pushed to' && event.action_name !== 'pushed new') continue;
+
+        const createdAt = event.created_at;
+        const reference = event.push_data?.ref;
+
+        if (typeof createdAt !== 'string' || typeof reference !== 'string') continue;
+
+        const createdTimestamp = Date.parse(createdAt);
+        if (Number.isNaN(createdTimestamp)) continue;
+
+        // Filter by date range
+        if (
+          createdTimestamp <= dateRangeTimestamps.fromTimestamp ||
+          createdTimestamp > dateRangeTimestamps.toTimestamp
+        ) {
+          continue;
+        }
+
+        // Extract branch name (remove refs/heads/ prefix)
+        const branchName = reference.replace('refs/heads/', '');
+        const projectId = event.project_id;
+        const commitTitle = event.push_data?.commit_title;
+
+        if (!commitTitle || typeof projectId !== 'number') continue;
+
+        // Get or fetch project details
+        if (!projectCache.has(projectId)) {
+          const project = await this.fetchProject(projectId);
+          projectCache.set(projectId, project);
+        }
+
+        const project = projectCache.get(projectId);
+        if (!project) continue;
+
+        const repositoryName = project.path_with_namespace;
+
+        contributions.push({
+          type: 'commit',
+          timestamp: createdAt,
+          text: commitTitle,
+          repository: repositoryName,
+          target: branchName,
+        });
+      }
+
+      return this.deduplicateContributions(contributions);
+    } catch (error) {
+      console.warn(
+        `Warning: Error fetching commits from GitLab Events API: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
 }
 
 /**
