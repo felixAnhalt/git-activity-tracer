@@ -24,4 +24,6 @@ export interface CliArguments {
   showConfig: boolean;
   projectIdCommand?: boolean;
   projectIdArgs?: string[];
+  cacheCommand?: boolean;
+  cacheArgs?: string[];
 }

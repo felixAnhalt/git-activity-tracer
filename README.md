@@ -41,6 +41,10 @@ git-activity-tracer all-commits
 
 # Include URLs in output
 git-activity-tracer --with-links
+
+# Cache management
+git-activity-tracer cache status  # Show cache info
+git-activity-tracer cache clear   # Clear all cached data
 ```
 
 ## Environment Variables
@@ -64,6 +68,7 @@ git-activity-tracer --with-links
 | `config`            | Display configuration file location            | -                      |
 | `project-id`        | Manage repository project ID mappings          | -                      |
 | `all-commits`       | Show all commits from all branches (see below) | -                      |
+| `cache`             | Manage contribution cache (status, clear)      | -                      |
 
 ### All Commits Command
 
@@ -100,6 +105,34 @@ Configuration file: `~/.git-activity-tracer/config.json` (auto-created on first 
 # View configuration location
 git-activity-tracer config
 ```
+
+### Caching
+
+Git Activity Tracer automatically caches fetched contributions locally to build a historical record. The cache is stored in `~/.git-activity-tracer/cache/` and is managed automatically.
+
+**How it works:**
+
+- Always fetches fresh data for the requested date range
+- Saves all fetched contributions to local cache
+- Cache builds up over time as you run queries
+- Useful for historical analysis and offline reference
+
+**Cache commands:**
+
+```bash
+# Show cache status (size, entries, date ranges)
+git-activity-tracer cache status
+
+# Clear all cached data
+git-activity-tracer cache clear
+```
+
+**Benefits:**
+
+- **Historical Record**: Builds a complete archive of your contributions over time
+- **Offline Reference**: Access previously fetched data without internet
+- **Data Backup**: Local copy of your contribution history
+- **Automatic**: No configuration needed, works out of the box
 
 ### Custom Base Branches
 

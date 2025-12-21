@@ -3,25 +3,51 @@ import type { Contribution } from '../../types.js';
 import type { Connector } from '../../connectors/types.js';
 import type { Configuration } from '../config/index.js';
 import { deduplicateContributions } from './contributionDeduplicator.js';
+import { loadCache, saveCache } from './cacheManager.js';
 
 /**
- * Fetches contributions from multiple connectors and merges them.
+ * Fetches contributions from multiple connectors with caching support.
  * Contributions are deduplicated and sorted by timestamp.
  */
 const fetchAndMergeContributions = async (
   connectors: Array<{ connector: Connector; name: string }>,
   from: Dayjs,
   to: Dayjs,
+  useCache: boolean,
 ): Promise<Contribution[]> => {
   const allContributions: Contribution[] = [];
 
   // Fetch from all connectors in parallel
   const results = await Promise.allSettled(
     connectors.map(async ({ connector, name }) => {
-      console.log(`Fetching contributions from ${name}...`);
-      const contributions = await connector.fetchContributions(from, to);
-      console.log(`✓ Found ${contributions.length} contributions from ${name}`);
-      return contributions;
+      const platform = connector.getPlatformName();
+      const username = await connector.getUserLogin();
+
+      if (useCache) {
+        // Load cache
+        const cachedContributions = await loadCache(platform, username);
+
+        if (cachedContributions.length > 0) {
+          console.log(`Loaded ${cachedContributions.length} cached contributions from ${name}`);
+        }
+
+        // Always fetch fresh data for the requested range
+        console.log(`Fetching contributions from ${name}...`);
+        const freshContributions = await connector.fetchContributions(from, to);
+        console.log(`✓ Found ${freshContributions.length} contributions from ${name}`);
+
+        // Save to cache (will merge with existing)
+        await saveCache(platform, username, freshContributions);
+
+        // Return fresh contributions (cache is saved for future use)
+        return freshContributions;
+      } else {
+        // No cache - fetch directly
+        console.log(`Fetching contributions from ${name}...`);
+        const contributions = await connector.fetchContributions(from, to);
+        console.log(`✓ Found ${contributions.length} contributions from ${name}`);
+        return contributions;
+      }
     }),
   );
 
@@ -71,6 +97,7 @@ const enrichContributionsWithProjectIds = (
  * @param configuration - Application configuration
  * @param from - Start date for the report
  * @param to - End date for the report
+ * @param useCache - Whether to use caching (default: true)
  * @returns Array of enriched and deduplicated contributions
  */
 export const generateReport = async (
@@ -78,6 +105,7 @@ export const generateReport = async (
   configuration: Configuration,
   from: Dayjs,
   to: Dayjs,
+  useCache = true,
 ): Promise<Contribution[]> => {
   const connectorsWithNames = connectors.map((connector) => ({
     connector,
@@ -88,7 +116,7 @@ export const generateReport = async (
     `Initialized ${connectors.length} connector(s): ${connectorsWithNames.map((c) => c.name).join(', ')}`,
   );
 
-  const contributions = await fetchAndMergeContributions(connectorsWithNames, from, to);
+  const contributions = await fetchAndMergeContributions(connectorsWithNames, from, to, useCache);
   const enrichedContributions = enrichContributionsWithProjectIds(
     contributions,
     configuration.repositoryProjectIds ?? {},
@@ -113,6 +141,7 @@ export const generateReport = async (
  * @param configuration - Application configuration
  * @param from - Start date for the report
  * @param to - End date for the report
+ * @param useCache - Whether to use caching (default: true)
  * @returns Array of all contributions (commits from all branches + PRs + reviews)
  */
 export const generateCommitsReport = async (
@@ -120,6 +149,7 @@ export const generateCommitsReport = async (
   configuration: Configuration,
   from: Dayjs,
   to: Dayjs,
+  useCache = true,
 ): Promise<Contribution[]> => {
   const connectorsWithNames = connectors.map((connector) => ({
     connector,
@@ -137,21 +167,53 @@ export const generateCommitsReport = async (
   // Each connector fetches both all commits AND regular contributions (PRs, reviews)
   const results = await Promise.allSettled(
     connectorsWithNames.map(async ({ connector, name }) => {
-      console.log(`Fetching commits from ${name}...`);
+      const platform = connector.getPlatformName();
+      const username = await connector.getUserLogin();
 
-      // Fetch commits from all branches
-      const commits = await connector.fetchAllCommits(from, to);
+      if (useCache) {
+        // Load cache
+        const cachedContributions = await loadCache(platform, username);
 
-      console.log(`Fetching regular contributions from ${name}`);
-      // Also fetch regular contributions (PRs, reviews, and base branch commits)
-      const regularContributions = await connector.fetchContributions(from, to);
+        if (cachedContributions.length > 0) {
+          console.log(`Loaded ${cachedContributions.length} cached contributions from ${name}`);
+        }
 
-      console.log(
-        `✓ Found ${commits.length + regularContributions.length} contributions from ${name}`,
-      );
+        // Always fetch fresh data
+        console.log(`Fetching commits from ${name}...`);
+        const commits = await connector.fetchAllCommits(from, to);
 
-      // Merge both sets of contributions
-      return [...commits, ...regularContributions];
+        console.log(`Fetching regular contributions from ${name}`);
+        const regularContributions = await connector.fetchContributions(from, to);
+
+        console.log(
+          `✓ Found ${commits.length + regularContributions.length} contributions from ${name}`,
+        );
+
+        // Merge both sets of contributions
+        const freshContributions = [...commits, ...regularContributions];
+
+        // Save to cache
+        await saveCache(platform, username, freshContributions);
+
+        // Return fresh contributions
+        return freshContributions;
+      } else {
+        console.log(`Fetching commits from ${name}...`);
+
+        // Fetch commits from all branches
+        const commits = await connector.fetchAllCommits(from, to);
+
+        console.log(`Fetching regular contributions from ${name}`);
+        // Also fetch regular contributions (PRs, reviews, and base branch commits)
+        const regularContributions = await connector.fetchContributions(from, to);
+
+        console.log(
+          `✓ Found ${commits.length + regularContributions.length} contributions from ${name}`,
+        );
+
+        // Merge both sets of contributions
+        return [...commits, ...regularContributions];
+      }
     }),
   );
 

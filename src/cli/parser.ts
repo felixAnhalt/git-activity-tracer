@@ -96,6 +96,23 @@ export const parseCliArguments = (): CliArguments => {
       // Handled in main CLI logic
     });
 
+  // Cache management command
+  const cacheCommand = program.command('cache').description('Manage contribution cache');
+
+  cacheCommand
+    .command('status')
+    .description('Show cache information')
+    .action(() => {
+      // Handled in main CLI logic
+    });
+
+  cacheCommand
+    .command('clear')
+    .description('Clear all cached data')
+    .action(() => {
+      // Handled in main CLI logic
+    });
+
   // All commits command - show all commits from all branches
   program
     .command('all-commits')
@@ -127,6 +144,20 @@ export const parseCliArguments = (): CliArguments => {
       showConfig: false,
       projectIdCommand: true,
       projectIdArgs: [subcommand, ...subArgs],
+    };
+  }
+
+  // Handle cache subcommand
+  if (commandName === 'cache') {
+    const subcommand = args[1];
+    const subArgs = args.slice(2);
+
+    return {
+      output: 'console',
+      withLinks: false,
+      showConfig: false,
+      cacheCommand: true,
+      cacheArgs: [subcommand, ...subArgs],
     };
   }
 
