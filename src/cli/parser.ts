@@ -96,10 +96,10 @@ export const parseCliArguments = (): CliArguments => {
       // Handled in main CLI logic
     });
 
-  // Commits command - show all commits only
+  // All commits command - show all commits from all branches
   program
-    .command('commits')
-    .description('Show all commits within date range')
+    .command('all-commits')
+    .description('Show all commits from all branches within date range')
     .argument('[from]', 'Start date (YYYY-MM-DD or preset: last-week, last-month, this-week)')
     .argument('[to]', 'End date (YYYY-MM-DD)')
     .option('-f, --format <type>', 'Output format', 'console')
@@ -139,13 +139,13 @@ export const parseCliArguments = (): CliArguments => {
     };
   }
 
-  // Handle commits command
-  if (commandName === 'commits') {
+  // Handle all-commits command
+  if (commandName === 'all-commits') {
     const subArgs = args.slice(1);
     const dateRange = parseDateRangeArguments(subArgs);
 
     return {
-      commandType: 'commits',
+      commandType: 'all-commits',
       ...dateRange,
       withLinks: options.withLinks,
       output: (options.format as OutputFormat) ?? 'console',

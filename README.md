@@ -93,37 +93,43 @@ The tool automatically detects available tokens and fetches from all configured 
 
 ## Command Line Options
 
-| Option              | Description                                     | Default                |
-| ------------------- | ----------------------------------------------- | ---------------------- |
-| `<fromdate>`        | Start date in YYYY-MM-DD format                 | Monday of current week |
-| `<todate>`          | End date in YYYY-MM-DD format                   | Today                  |
-| `--with-links`      | Include URLs in console output                  | false                  |
-| `--format <format>` | Output format: `console`, `json`, or `csv`      | `console`              |
-| `config`            | Display configuration file location             | -                      |
-| `project-id`        | Manage repository project ID mappings           | -                      |
-| `commits`           | Show commits-only report (see 'Usage Examples') | -                      |
+| Option              | Description                                               | Default                |
+| ------------------- | --------------------------------------------------------- | ---------------------- |
+| `<fromdate>`        | Start date in YYYY-MM-DD format                           | Monday of current week |
+| `<todate>`          | End date in YYYY-MM-DD format                             | Today                  |
+| `--with-links`      | Include URLs in console output                            | false                  |
+| `--format <format>` | Output format: `console`, `json`, or `csv`                | `console`              |
+| `config`            | Display configuration file location                       | -                      |
+| `project-id`        | Manage repository project ID mappings                     | -                      |
+| `all-commits`       | Show all commits from all branches (see 'Usage Examples') | -                      |
 
-### Commits Command
+### All Commits Command
 
-The `commits` command shows only commit contributions (excluding PRs and reviews) with full commit messages and branch names:
+The `all-commits` command shows all commits from all branches (including feature branches) within the specified date range:
 
 ```bash
 # Get all commits for current week
-git-activity-tracer commits
+git-activity-tracer all-commits
 
-# Get commits for specific date range
-git-activity-tracer commits 2025-12-01 2025-12-31
+# Get all commits for specific date range
+git-activity-tracer all-commits 2025-12-01 2025-12-31
+
+# Get all commits for last month
+git-activity-tracer all-commits lastmonth
 
 # Export to CSV
-git-activity-tracer commits --format csv
+git-activity-tracer all-commits --format csv
 ```
 
 **What commits are shown:**
 
-- **GitHub**: Commits from your contribution history (default branch commits and merged PR commits). Very recent commits may take a few minutes to appear as GitHub indexes them.
-- **GitLab**: All pushed commits from all branches (uses Events API).
+- **GitHub**: All commits you authored on any branch (main, feature branches, etc.) using the Commits API with full pagination. No longer limited to 300 events or 30 days.
+- **GitLab**: All pushed commits from all branches.
 
-**Note**: GitHub's APIs don't provide an efficient way to fetch commits from all unmerged feature branches. Commits appear once they're merged to the default branch or included in a pull request.
+**Difference from default report:**
+
+- Default report: Shows commits from base branches (main, master, develop) + PRs + reviews
+- `all-commits`: Shows ALL commits from ALL branches (feature branches included), providing complete commit history
 
 ## Usage Examples
 

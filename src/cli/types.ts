@@ -9,8 +9,8 @@ export type FileOutputFormat = Exclude<OutputFormat, 'console'>;
  * Parsed and validated CLI arguments.
  */
 export interface CliArguments {
-  /** Command type: 'report' (default) or 'commits' */
-  commandType?: 'report' | 'commits';
+  /** Command type: 'report' (default) or 'all-commits' */
+  commandType?: 'report' | 'all-commits';
   /** Start date in YYYY-MM-DD format, or undefined for default (Monday of current week) */
   from?: string;
   /** End date in YYYY-MM-DD format, or undefined for default (today) */

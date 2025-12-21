@@ -7,12 +7,12 @@ import { generateCommitsReport } from '../../lib/services/reportGenerator.js';
 import type { CliArguments } from '../types.js';
 
 /**
- * Fetches all commits, formats them, and writes output.
- * Shows only commit contributions (excludes PRs and reviews).
+ * Fetches all commits from all branches, formats them, and writes output.
+ * Shows all commit contributions from all branches (includes feature branches).
  *
  * @param cliArguments - Parsed CLI arguments
  */
-export const runCommitsReport = async (cliArguments: CliArguments): Promise<void> => {
+export const runAllCommitsReport = async (cliArguments: CliArguments): Promise<void> => {
   // Initialize all available connectors
   const connectors = await initializeConnectors();
   const configuration = await loadConfiguration();
@@ -23,7 +23,7 @@ export const runCommitsReport = async (cliArguments: CliArguments): Promise<void
     cliArguments.lastmonth,
   );
 
-  // Generate commits-only report using service layer
+  // Generate all-commits report using service layer
   const commits = await generateCommitsReport(connectors, configuration, from, to);
 
   // Format data
