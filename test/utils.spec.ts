@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { getCurrentWeekRange } from '../src/lib/time/dateRanges.js';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+
+dayjs.extend(utc);
 
 describe('getCurrentWeekRange', () => {
   it('returns Monday to today for current week', () => {
@@ -10,7 +13,7 @@ describe('getCurrentWeekRange', () => {
     // from should be Monday
     expect(from.day()).toBe(1); // 1 = Monday
 
-    // to should be today
+    // to should be today (comparing dates only)
     expect(to.format('YYYY-MM-DD')).toBe(today.format('YYYY-MM-DD'));
   });
 

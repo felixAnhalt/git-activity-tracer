@@ -24,6 +24,10 @@ export const runContributionReport = async (cliArguments: CliArguments): Promise
     cliArguments.lastmonth,
   );
 
+  console.log(
+    `Generating all-commits report from ${from.format('YYYY-MM-DD')} to ${to.format('YYYY-MM-DD')}...\n`,
+  );
+
   // Generate report using service layer
   const contributions = await generateReport(connectors, configuration, from, to);
 

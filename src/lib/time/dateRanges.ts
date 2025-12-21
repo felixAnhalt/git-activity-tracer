@@ -1,13 +1,17 @@
 import dayjs from 'dayjs';
 import weekday from 'dayjs/plugin/weekday.js';
+import utc from 'dayjs/plugin/utc.js';
 import { ValidationError } from '../errors/validationError.js';
 
 dayjs.extend(weekday);
+dayjs.extend(utc);
 
 /**
  * Returns the date range for the current week (Monday to current day).
  * If today is Monday, returns Monday to Monday.
  * If today is Tuesday, returns Monday to Tuesday, etc.
+ * Uses local timezone to determine the current week, but returns UTC timestamps
+ * with the same wall-clock time (e.g., Monday 00:00 CET becomes Monday 00:00 UTC).
  */
 export const getCurrentWeekRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   const today = dayjs();
@@ -19,13 +23,15 @@ export const getCurrentWeekRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } =>
   const monday = today.subtract(daysSinceMonday, 'day');
 
   return {
-    from: monday.startOf('day'),
-    to: today.endOf('day'),
+    from: monday.startOf('day').utc(true),
+    to: today.endOf('day').utc(true),
   };
 };
 
 /**
  * Returns the date range for last week (Monday to Sunday).
+ * Uses local timezone to determine last week, but returns UTC timestamps
+ * with the same wall-clock time.
  */
 export const getLastWeekRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   const today = dayjs();
@@ -41,13 +47,15 @@ export const getLastWeekRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   const lastWeekSunday = lastWeekMonday.add(6, 'day');
 
   return {
-    from: lastWeekMonday.startOf('day'),
-    to: lastWeekSunday.endOf('day'),
+    from: lastWeekMonday.startOf('day').utc(true),
+    to: lastWeekSunday.endOf('day').utc(true),
   };
 };
 
 /**
  * Returns the date range for last month (calculated from today, 4 weeks back).
+ * Uses local timezone to determine last month, but returns UTC timestamps
+ * with the same wall-clock time.
  */
 export const getLastMonthRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   const today = dayjs();
@@ -55,8 +63,8 @@ export const getLastMonthRange = (): { from: dayjs.Dayjs; to: dayjs.Dayjs } => {
   const oneMonthAgo = today.subtract(1, 'month');
 
   return {
-    from: oneMonthAgo.startOf('day'),
-    to: today.endOf('day'),
+    from: oneMonthAgo.startOf('day').utc(true),
+    to: today.endOf('day').utc(true),
   };
 };
 
@@ -100,7 +108,7 @@ export const parseRange = (
     ]);
   }
   if (parsedFrom.isAfter(parsedTo)) {
-    return { from: parsedTo.startOf('day'), to: parsedFrom.endOf('day') };
+    return { from: parsedTo.startOf('day').utc(true), to: parsedFrom.endOf('day').utc(true) };
   }
-  return { from: parsedFrom.startOf('day'), to: parsedTo.endOf('day') };
+  return { from: parsedFrom.startOf('day').utc(true), to: parsedTo.endOf('day').utc(true) };
 };

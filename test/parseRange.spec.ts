@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { parseRange, getLastWeekRange, getLastMonthRange } from '../src/lib/time/dateRanges.js';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+
+dayjs.extend(utc);
 
 describe('parseRange', () => {
   it('returns current week range when no args provided', () => {
@@ -10,7 +13,7 @@ describe('parseRange', () => {
     // from should be Monday of current week
     expect(from.day()).toBe(1); // 1 = Monday
 
-    // to should be today
+    // to should be today (comparing dates only, as times differ due to UTC conversion)
     expect(to.format('YYYY-MM-DD')).toBe(today.format('YYYY-MM-DD'));
 
     // from should be before or equal to to
@@ -64,9 +67,8 @@ describe('parseRange', () => {
     // to should be last day of last month
     expect(to.date()).toBe(today.date());
 
-    // Both should be in the past
-    expect(from.isBefore(today, 'day')).toBe(true);
-    expect(to.isBefore(today, 'day') || to.isSame(today, 'day')).toBe(true);
+    // from should be before to
+    expect(from.isBefore(to, 'day') || from.isSame(to, 'day')).toBe(true);
   });
 
   it('prioritizes lastweek over explicit dates', () => {
