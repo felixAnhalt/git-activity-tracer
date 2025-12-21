@@ -47,7 +47,7 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
 
         // Use whichever token is available
         if (process.env.GH_TOKEN) {
-          connectors.push(createGitHubConnector(process.env.GH_TOKEN, configuration));
+          connectors.push(createGitHubConnector(process.env.GH_TOKEN));
           console.log('✓ GitHub connector initialized');
         } else if (process.env.GITLAB_TOKEN) {
           connectors.push(createGitLabConnector(process.env.GITLAB_TOKEN, configuration));
@@ -98,7 +98,7 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
         };
 
         const connectors: Connector[] = [
-          createGitHubConnector(process.env.GH_TOKEN!, configuration),
+          createGitHubConnector(process.env.GH_TOKEN!),
           createGitLabConnector(process.env.GITLAB_TOKEN!, configuration),
         ];
 
@@ -175,7 +175,7 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
 
         const connectors: Connector[] = [];
         if (process.env.GH_TOKEN) {
-          connectors.push(createGitHubConnector(process.env.GH_TOKEN, configuration));
+          connectors.push(createGitHubConnector(process.env.GH_TOKEN));
         } else if (process.env.GITLAB_TOKEN) {
           connectors.push(createGitLabConnector(process.env.GITLAB_TOKEN, configuration));
         }
@@ -222,7 +222,7 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
 
         const connectors: Connector[] = [];
         if (process.env.GH_TOKEN) {
-          connectors.push(createGitHubConnector(process.env.GH_TOKEN, configuration));
+          connectors.push(createGitHubConnector(process.env.GH_TOKEN));
         } else if (process.env.GITLAB_TOKEN) {
           connectors.push(createGitLabConnector(process.env.GITLAB_TOKEN, configuration));
         }
@@ -251,7 +251,7 @@ describe.skipIf(!process.env.GH_TOKEN && !process.env.GITLAB_TOKEN)(
         };
 
         // Create one valid connector and simulate a failing connector
-        const validConnector = createGitHubConnector(process.env.GH_TOKEN!, configuration);
+        const validConnector = createGitHubConnector(process.env.GH_TOKEN!);
 
         // Create a failing connector by using an invalid token
         const failingConnector = createGitLabConnector('invalid-token', configuration);

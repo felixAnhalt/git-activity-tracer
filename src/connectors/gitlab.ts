@@ -18,6 +18,11 @@ export type { Contribution, ContributionType } from '../types.js';
 /**
  * GitLab connector - fetches contributions from GitLab API.
  * Supports commits, merge requests, and MR reviews/approvals.
+ *
+ * Note: This connector USES the baseBranches configuration to filter
+ * commits in fetchContributions(). Only push events to configured base
+ * branches (main, master, develop, etc.) are included in standard reports.
+ * Use fetchAllCommits() to get commits from all branches.
  */
 export class GitLabConnector implements Connector {
   private gitlab: InstanceType<typeof Gitlab>;
@@ -178,6 +183,9 @@ export class GitLabConnector implements Connector {
   /**
    * Extracts commit contributions from push events.
    * Filters by date range and base branch references from configuration.
+   *
+   * IMPORTANT: This method uses configuration.baseBranches to filter commits.
+   * Only commits pushed to configured base branches are included.
    */
   private async extractPushEventContributions(
     events: GitLabEvent[],

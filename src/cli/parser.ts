@@ -13,19 +13,19 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, '../../package.json'
  * Parses date range arguments from CLI input.
  * Handles presets (last-week, last-month, this-week) and explicit date ranges.
  *
- * @param arguments_ - Array of string arguments to parse
+ * @param cliArguments - Array of string arguments to parse
  * @returns Parsed date range with from/to dates and preset flags
  */
 const parseDateRangeArguments = (
-  arguments_: string[],
+  cliArguments: string[],
 ): Pick<CliArguments, 'from' | 'to' | 'lastweek' | 'lastmonth'> => {
   let from: string | undefined;
   let to: string | undefined;
   let lastweek = false;
   let lastmonth = false;
 
-  if (arguments_.length > 0 && typeof arguments_[0] === 'string') {
-    const firstArgument = arguments_[0].toLowerCase();
+  if (cliArguments.length > 0 && typeof cliArguments[0] === 'string') {
+    const firstArgument = cliArguments[0].toLowerCase();
     if (firstArgument === 'last-week' || firstArgument === 'lastweek') {
       lastweek = true;
     } else if (firstArgument === 'last-month' || firstArgument === 'lastmonth') {
@@ -33,8 +33,8 @@ const parseDateRangeArguments = (
     } else if (firstArgument === 'this-week' || firstArgument === 'thisweek') {
       // Default behavior
     } else {
-      from = arguments_[0];
-      to = arguments_[1];
+      from = cliArguments[0];
+      to = cliArguments[1];
     }
   }
 

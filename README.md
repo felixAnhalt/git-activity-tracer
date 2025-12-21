@@ -1,270 +1,113 @@
 # Git Activity Tracer
 
-**Track your development activity across GitHub and GitLab.** Fetch commits, pull/merge requests, and code reviews from your authenticated accounts.
-
-## Installation
-
-### Global Installation (Recommended)
-
-```bash
-npm install -g @tmegit/git-activity-tracer
-```
-
-### Using npx (No installation required)
-
-### Example: Fetch activity for January 2025
-
-```bash
-npx @tmegit/git-activity-tracer 2025-01-01 2025-01-31
-```
-
-### Local Development
-
-```bash
-# Clone the repository
-git clone https://github.com/felixAnhalt/git-activity-tracer.git
-cd git-activity-tracer
-
-# Install dependencies
-pnpm install
-
-# Run locally
-pnpm start
-```
+Track your development activity across GitHub and GitLab. Fetch commits, pull/merge requests, and code reviews from your authenticated accounts.
 
 ## Quick Start
 
-### Required Environment Variables
-
-Create a `.env` file (for local development) or set environment variables with your platform tokens:
-
 ```bash
-# GitHub (optional)
-GH_TOKEN=your_github_token_here
-
-# GitLab (optional)
-GITLAB_TOKEN=your_gitlab_token_here
-GITLAB_HOST=https://gitlab.com  # Optional: defaults to gitlab.com
+# Try it now with npx
+npx @tmegit/git-activity-tracer  # Fetch current week
 ```
 
-At least one token (GitHub or GitLab) is required. Both can be used simultaneously to fetch from multiple platforms.
+**First time setup:**
 
-**Get your tokens:**
+1. Get a token: [GitHub](https://github.com/settings/tokens) or [GitLab](https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html)
+2. Set environment variable: `export GH_TOKEN=your_token_here` (or `GITLAB_TOKEN`)
+3. Run: `npx @tmegit/git-activity-tracer`
 
-- GitHub: https://github.com/settings/tokens
-- GitLab: https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html
-
-### Basic Usage
+**Install globally** (optional):
 
 ```bash
-# Fetch activity for the current week (Monday to today)
-git-activity-tracer
-
-# Fetch activity for a specific date range
-git-activity-tracer 2025-01-01 2025-01-31
-
-# Export as JSON or CSV
-git-activity-tracer --format json
-git-activity-tracer --format csv
-
-# Using npx (no installation)
-npx @tmegit/git-activity-tracer 2025-01-01 2025-01-31
+npm install -g @tmegit/git-activity-tracer
+git-activity-tracer  # Fetch current week
+git-activity-tracer 2025-01-01 2025-01-31  # Specific range
 ```
 
-## Features
-
-- **Multi-platform support**: GitHub and GitLab with automatic detection
-- **Comprehensive tracking**: Commits, pull/merge requests, and code reviews
-- **Multiple output formats**: Console (default), JSON, CSV
-- **Project ID mapping**: Map repositories to project IDs for billing and time tracking
-- **Flexible configuration**: Configurable base branches and date ranges
-- **Smart pagination**: Automatically fetches all contributions within limits
-- **Cross-platform**: Works on macOS, Linux, and Windows
-
-## Environment Variables
-
-| Variable       | Required                        | Description                           | Default              |
-| -------------- | ------------------------------- | ------------------------------------- | -------------------- |
-| `GH_TOKEN`     | One of GH_TOKEN or GITLAB_TOKEN | GitHub personal access token          | -                    |
-| `GITLAB_TOKEN` | One of GH_TOKEN or GITLAB_TOKEN | GitLab personal access token          | -                    |
-| `GITLAB_HOST`  | No                              | GitLab instance URL (for self-hosted) | `https://gitlab.com` |
-
-The tool automatically detects available tokens and fetches from all configured platforms.
-
-## Command Line Options
-
-| Option              | Description                                               | Default                |
-| ------------------- | --------------------------------------------------------- | ---------------------- |
-| `<fromdate>`        | Start date in YYYY-MM-DD format                           | Monday of current week |
-| `<todate>`          | End date in YYYY-MM-DD format                             | Today                  |
-| `--with-links`      | Include URLs in console output                            | false                  |
-| `--format <format>` | Output format: `console`, `json`, or `csv`                | `console`              |
-| `config`            | Display configuration file location                       | -                      |
-| `project-id`        | Manage repository project ID mappings                     | -                      |
-| `all-commits`       | Show all commits from all branches (see 'Usage Examples') | -                      |
-
-### All Commits Command
-
-The `all-commits` command shows all commits from all branches (including feature branches) within the specified date range:
+## Common Commands
 
 ```bash
-# Get all commits for current week
-git-activity-tracer all-commits
-
-# Get all commits for specific date range
-git-activity-tracer all-commits 2025-12-01 2025-12-31
-
-# Get all commits for last month
-git-activity-tracer all-commits lastmonth
-
-# Export to CSV
-git-activity-tracer all-commits --format csv
-```
-
-**What commits are shown:**
-
-- **GitHub**: All commits you authored on any branch (including feature branches) using the Search API. This searches across all branches and repositories you have access to, with no 300-event limitation.
-- **GitLab**: All pushed commits from all branches.
-
-**Difference from default report:**
-
-- Default report: Shows commits from base branches (main, master, develop) + PRs + reviews
-- `all-commits`: Shows ALL commits from ALL branches (feature branches included), providing complete commit history across all your work
-
-## Usage Examples
-
-### Date Ranges
-
-```bash
-# Current week (Monday to today)
+# Current week activity
 git-activity-tracer
 
 # Specific date range
 git-activity-tracer 2025-01-01 2025-01-31
 
-# Single day
-git-activity-tracer 2025-12-19 2025-12-19
+# Export formats
+git-activity-tracer --format json
+git-activity-tracer --format csv
 
-# Using npx
-npx @tmegit/git-activity-tracer 2025-01-01 2025-01-31
-```
+# All commits from all branches
+git-activity-tracer all-commits
 
-### Output Formats
-
-**Console** (human-readable, grouped by date):
-
-```bash
-git-activity-tracer 2025-11-11 2025-11-12
-```
-
-**JSON** (for programmatic processing):
-
-```bash
-git-activity-tracer 2025-11-11 2025-11-12 --format json
-```
-
-**CSV** (for spreadsheets):
-
-```bash
-git-activity-tracer 2025-11-11 2025-11-12 --format csv
-```
-
-### Include URLs
-
-```bash
-# Show contribution URLs in console output
+# Include URLs in output
 git-activity-tracer --with-links
 ```
 
-## Project ID Mapping
+## Environment Variables
 
-Map repositories to project IDs for billing and time tracking. Project IDs automatically appear in all output formats.
+| Variable       | Required  | Description                           | Default              |
+| -------------- | --------- | ------------------------------------- | -------------------- |
+| `GH_TOKEN`     | One of \* | GitHub personal access token          | -                    |
+| `GITLAB_TOKEN` | One of \* | GitLab personal access token          | -                    |
+| `GITLAB_HOST`  | No        | GitLab instance URL (for self-hosted) | `https://gitlab.com` |
 
-### Manage Mappings
+\*At least one token (GitHub or GitLab) is required. Both can be used simultaneously.
+
+## Command Options
+
+| Option              | Description                                    | Default                |
+| ------------------- | ---------------------------------------------- | ---------------------- |
+| `<fromdate>`        | Start date (YYYY-MM-DD)                        | Monday of current week |
+| `<todate>`          | End date (YYYY-MM-DD)                          | Today                  |
+| `--with-links`      | Include URLs in console output                 | false                  |
+| `--format <format>` | Output format: `console`, `json`, or `csv`     | `console`              |
+| `config`            | Display configuration file location            | -                      |
+| `project-id`        | Manage repository project ID mappings          | -                      |
+| `all-commits`       | Show all commits from all branches (see below) | -                      |
+
+### All Commits Command
+
+Show all commits from all branches (including feature branches):
 
 ```bash
-# List all project ID mappings
-git-activity-tracer project-id list
+git-activity-tracer all-commits                        # Current week
+git-activity-tracer all-commits 2025-12-01 2025-12-31  # Date range
+git-activity-tracer all-commits --format csv           # Export
+```
 
-# Add a mapping
+**Difference from default:**
+
+- **Default**: Commits from base branches (main/master/develop) + PRs + reviews
+- **all-commits**: ALL commits from ALL branches (including feature branches)
+
+## Project ID Mapping
+
+Map repositories to project IDs for billing and time tracking:
+
+```bash
 git-activity-tracer project-id add owner/repository PROJECT-123
-
-# Remove a mapping
+git-activity-tracer project-id list
 git-activity-tracer project-id remove owner/repository
 ```
 
-### Example Workflow
-
-```bash
-# Configure your billable projects
-git-activity-tracer project-id add acme-corp/website 1727783287A
-git-activity-tracer project-id add globex/mobile-app 2849372837B
-
-# List configured mappings
-git-activity-tracer project-id list
-
-# Generate report - project IDs automatically included
-git-activity-tracer 2025-12-01 2025-12-19 --format csv
-```
-
-### Output Format
-
-Project IDs appear in all output formats:
-
-**Console:**
-
-```
-commit: 10:30:00: [acme-corp/website]: {1727783287A}: (main): Fix bug
-```
-
-**CSV:**
-
-```csv
-type,timestamp,date,repository,target,projectId,text
-commit,2025-12-01T10:30:00Z,2025-12-01,acme-corp/website,main,1727783287A,Fix bug
-```
-
-**JSON:**
-
-```json
-{
-  "type": "commit",
-  "timestamp": "2025-12-01T10:30:00Z",
-  "date": "2025-12-01",
-  "repository": "acme-corp/website",
-  "target": "main",
-  "projectId": "1727783287A",
-  "text": "Fix bug"
-}
-```
-
-Contributions without a configured project ID mapping will omit the `projectId` field.
+Project IDs automatically appear in all output formats (console, JSON, CSV).
 
 ## Configuration
 
-The tool uses a configuration file at `~/.git-activity-tracer/config.json` for customization. The file is automatically created with defaults on first run.
-
-### View Configuration
+Configuration file: `~/.git-activity-tracer/config.json` (auto-created on first run)
 
 ```bash
+# View configuration location
 git-activity-tracer config
 ```
 
-### Platform Detection
-
-The tool automatically detects platforms based on available environment variables:
-
-- **GitHub**: Enabled when `GH_TOKEN` is set
-- **GitLab**: Enabled when `GITLAB_TOKEN` is set
-- **Multiple platforms**: Set both tokens to fetch from both platforms simultaneously
-
-Results from all enabled platforms are automatically merged and deduplicated.
-
 ### Custom Base Branches
 
-By default, commits are tracked for these branches: `main`, `master`, `develop`, `development`.
+**Note:** Base branch configuration applies **only to GitLab**. GitHub automatically uses the default branch via the GraphQL API and does not require configuration.
 
-To track additional branches, edit `~/.git-activity-tracer/config.json`:
+Default branches tracked (GitLab only): `main`, `master`, `develop`, `development`
+
+To add more branches for GitLab, edit the configuration file:
 
 ```json
 {
@@ -275,109 +118,45 @@ To track additional branches, edit `~/.git-activity-tracer/config.json`:
 }
 ```
 
+**Platform differences:**
+
+- **GitHub**: Uses GraphQL `contributionsCollection` API which automatically provides commits from the default branch. The `baseBranches` configuration is not used.
+- **GitLab**: Filters push events by the configured `baseBranches` to determine which commits to include in reports.
+- **Both platforms**: `all-commits` command ignores base branch configuration and returns commits from all branches.
+
 ### Self-Hosted GitLab
 
-For self-hosted GitLab instances, set the `GITLAB_HOST` environment variable:
-
 ```bash
-GITLAB_HOST=https://gitlab.your-company.com
-GITLAB_TOKEN=your_token_here
-```
-
-## Build and Distribution
-
-```bash
-# Build the project
-pnpm build
-
-# Run the compiled version
-node dist/index.js 2025-01-01 2025-01-31
+export GITLAB_HOST=https://gitlab.your-company.com
+export GITLAB_TOKEN=your_token_here
 ```
 
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm start
-
-# Run tests
-pnpm test
-
-# Run tests in watch mode
-pnpm run test:watch
-
-# Lint code
-pnpm run lint
-
-# Format code
-pnpm run format
+pnpm install        # Install dependencies
+pnpm start          # Run in development
+pnpm test           # Run tests
+pnpm run lint       # Lint code
+pnpm run format     # Format code
+pnpm build          # Build for distribution
 ```
 
 ## Contributing
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning and releases.
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning:
 
-### Commit Message Format
+- `feat:` - New feature (minor bump: 1.0.0 → 1.1.0)
+- `fix:` - Bug fix (patch bump: 1.0.0 → 1.0.1)
+- `feat!:` or `BREAKING CHANGE:` - Breaking change (major bump: 1.0.0 → 2.0.0)
+- `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `chore:` - No version bump
 
-Use the following prefixes for your commits:
-
-- `feat:` - A new feature (triggers minor version bump: 1.0.0 → 1.1.0)
-- `fix:` - A bug fix (triggers patch version bump: 1.0.0 → 1.0.1)
-- `docs:` - Documentation changes only
-- `style:` - Code style changes (formatting, missing semicolons, etc.)
-- `refactor:` - Code refactoring without changing functionality
-- `perf:` - Performance improvements
-- `test:` - Adding or updating tests
-- `chore:` - Maintenance tasks, dependency updates, etc.
-
-**Breaking changes** (triggers major version bump: 1.0.0 → 2.0.0):
-
-- Add `BREAKING CHANGE:` in commit body, or
-- Add `!` after type: `feat!:` or `fix!:`
-
-### Examples
-
-```bash
-# Feature (minor bump)
-git commit -m "feat: add support for Bitbucket integration"
-
-# Bug fix (patch bump)
-git commit -m "fix: resolve date parsing issue for leap years"
-
-# Breaking change (major bump)
-git commit -m "feat!: change API response format
-
-BREAKING CHANGE: The output format has changed from array to object"
-
-# Multiple lines
-git commit -m "fix: correct timezone handling
-
-- Fix UTC conversion bug
-- Add timezone tests
-- Update documentation"
-```
-
-### Automated Releases
-
-When you push commits to `main`:
-
-1. **semantic-release** analyzes commit messages
-2. Determines the next version based on commit types
-3. Updates `package.json` and `CHANGELOG.md`
-4. Creates a GitHub release with release notes
-5. Publishes to npm automatically
-
-No manual versioning needed - just write good commit messages!
+Commits to `main` trigger automated releases via semantic-release.
 
 ## API Limitations
 
-- **GitHub**: Fetches up to 50 repositories, 100 commits per repository
-- **GitLab**: Fetches up to 1000 events and 1000 merge requests per query
-
-For most users, these limits are sufficient. Very active users with thousands of contributions in a single date range may experience incomplete results.
+- **GitHub**: Up to 50 repositories, 100 commits per repository
+- **GitLab**: Up to 1000 events and 1000 merge requests per query
 
 ## License
 

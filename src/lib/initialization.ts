@@ -6,16 +6,17 @@ import type { Configuration } from './config/index.js';
 
 /**
  * Attempts to create a GitHub connector if GH_TOKEN is available.
+ * Note: GitHub connector does not use configuration.
  * @returns GitHub connector or null if token not available
  */
-const createGitHubConnectorIfAvailable = (configuration: Configuration): Connector | null => {
+const createGitHubConnectorIfAvailable = (): Connector | null => {
   const token = process.env.GH_TOKEN;
   if (!token || token.trim() === '') {
     return null;
   }
 
   try {
-    return createGitHubConnector(token, configuration);
+    return createGitHubConnector(token);
   } catch (error) {
     console.warn(
       `Warning: Failed to initialize GitHub connector: ${error instanceof Error ? error.message : String(error)}`,
@@ -47,8 +48,8 @@ const createGitLabConnectorIfAvailable = (configuration: Configuration): Connect
 /**
  * Loads application configuration and initializes all available connectors.
  * Automatically detects which platforms to use based on available tokens:
- * - GH_TOKEN → GitHub
- * - GITLAB_TOKEN → GitLab
+ * - GH_TOKEN → GitHub (no configuration needed)
+ * - GITLAB_TOKEN → GitLab (uses baseBranches configuration)
  *
  * @returns Array of initialized connectors (may be empty if no tokens available)
  */
@@ -57,13 +58,13 @@ export const initializeConnectors = async (): Promise<Connector[]> => {
     const configuration = await loadConfiguration();
     const connectors: Connector[] = [];
 
-    // Try to initialize GitHub connector
-    const githubConnector = createGitHubConnectorIfAvailable(configuration);
+    // Try to initialize GitHub connector (doesn't use configuration)
+    const githubConnector = createGitHubConnectorIfAvailable();
     if (githubConnector) {
       connectors.push(githubConnector);
     }
 
-    // Try to initialize GitLab connector
+    // Try to initialize GitLab connector (uses configuration for baseBranches)
     const gitlabConnector = createGitLabConnectorIfAvailable(configuration);
     if (gitlabConnector) {
       connectors.push(gitlabConnector);

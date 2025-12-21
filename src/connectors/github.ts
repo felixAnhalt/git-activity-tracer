@@ -1,7 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { Dayjs } from 'dayjs';
 import type { Contribution } from '../types.js';
-import type { Configuration } from '../lib/config/index.js';
 import type { Connector } from './types.js';
 import { deduplicateContributions } from '../lib/services/contributionDeduplicator.js';
 import type {
@@ -13,8 +12,6 @@ import type {
   GraphQLCommitRepoWithHistory,
   GraphQLPRNode,
   GraphQLReviewNode,
-  GitHubEvent,
-  GitHubEventPayload,
 } from './github.types.js';
 
 export type { Contribution, ContributionType } from '../types.js';
@@ -78,7 +75,6 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
   }
 }`;
 
-// Query for paginating commit history for a specific repository
 const PAGINATED_COMMIT_QUERY = `
 query($owner: String!, $name: String!, $branch: String!, $cursor: String, $from: GitTimestamp, $to: GitTimestamp) {
   repository(owner: $owner, name: $name) {
@@ -119,7 +115,6 @@ const isGraphQLErrorResponse = (x: unknown): x is GraphQLErrorResponse => {
 };
 
 const extractPayloadFromGraphQLResponse = (raw: unknown): GraphQLResponse | null => {
-  // Octokit returns { data: { data: { ... } } } for GraphQL queries; handle both shapes
   if (!raw || typeof raw !== 'object') return null;
   const asAny = raw as { data?: unknown };
   const inner = asAny.data ?? raw;
@@ -127,14 +122,18 @@ const extractPayloadFromGraphQLResponse = (raw: unknown): GraphQLResponse | null
   return inner as GraphQLResponse;
 };
 
+/**
+ * GitHub connector for fetching contributions via GitHub GraphQL and REST APIs.
+ *
+ * Note: This connector does NOT use the baseBranches configuration.
+ * GitHub's GraphQL contributionsCollection API automatically provides commits
+ * from the default branch, and fetchAllCommits() intentionally fetches from
+ * all branches without filtering.
+ */
 export class GitHubConnector implements Connector {
   private octokit: Octokit;
-  private configuration: Configuration;
 
-  /**
-   * Constructor accepts either an Octokit instance or a token string, plus configuration.
-   */
-  constructor(octokitOrToken: Octokit | string, configuration: Configuration) {
+  constructor(octokitOrToken: Octokit | string) {
     if (typeof octokitOrToken === 'string') {
       if (!octokitOrToken || octokitOrToken.trim() === '') {
         throw new Error('A non-empty GitHub token string is required.');
@@ -145,7 +144,6 @@ export class GitHubConnector implements Connector {
     } else {
       this.octokit = octokitOrToken;
     }
-    this.configuration = configuration;
   }
 
   getPlatformName(): string {
@@ -160,10 +158,6 @@ export class GitHubConnector implements Connector {
     return r.data.login;
   }
 
-  /**
-   * Fetches contribution data from GitHub GraphQL API.
-   * @throws {Error} If API returns errors or no data
-   */
   private async fetchGraphQLContributions(
     login: string,
     dateRange: DateRange,
@@ -201,10 +195,6 @@ export class GitHubConnector implements Connector {
     }
   }
 
-  /**
-   * Parses ISO date strings to timestamps for efficient range checking.
-   * @throws {Error} If date strings are invalid
-   */
   private parseDateRangeTimestamps(dateRange: DateRange): DateRangeTimestamps {
     const fromTimestamp = Date.parse(dateRange.from);
     const toTimestamp = Date.parse(dateRange.to);
@@ -216,22 +206,12 @@ export class GitHubConnector implements Connector {
     return { fromTimestamp, toTimestamp };
   }
 
-  /**
-   * Extracts repository name from GitHub URL.
-   * @param url GitHub URL in format: https://github.com/owner/repository/...
-   * @returns Repository name in format: owner/repository or undefined if unable to extract
-   */
   private extractRepositoryFromUrl(url?: string): string | undefined {
     if (!url) return undefined;
     const match = url.match(/github\.com\/([^/?#]+\/[^/?#]+)/);
     return match?.[1];
   }
 
-  /**
-   * Fetches paginated commit history for a specific repository branch.
-   * Continues fetching until all commits in the date range are retrieved.
-   * Filters commits to only include those authored by the authenticated user.
-   */
   private async fetchPaginatedCommits(
     owner: string,
     name: string,
@@ -303,10 +283,6 @@ export class GitHubConnector implements Connector {
         for (const commit of history.nodes) {
           if (!commit?.committedDate) continue;
 
-          // Filter commits by author: only include commits by the authenticated user
-          // Skip commits where:
-          // 1. Author has no linked GitHub account (authorLogin is undefined)
-          // 2. Author is a different GitHub user
           const authorLogin = commit.author?.user?.login;
           if (!authorLogin || authorLogin !== userLogin) {
             continue;
@@ -325,7 +301,6 @@ export class GitHubConnector implements Connector {
         hasNextPage = history.pageInfo?.hasNextPage ?? false;
         cursor = history.pageInfo?.endCursor;
 
-        // Safety check: if no cursor, stop pagination
         if (hasNextPage && !cursor) break;
       } catch (error) {
         console.warn(
@@ -338,18 +313,12 @@ export class GitHubConnector implements Connector {
     return contributions;
   }
 
-  /**
-   * Extracts commit contributions from GraphQL response with parallelized pagination.
-   * Processes multiple repositories in parallel for better performance.
-   * Filters commits to only include those authored by the authenticated user.
-   */
   private async extractCommitContributions(
     commitsByRepository: GraphQLCommitRepoWithHistory[],
     dateRangeTimestamps: DateRangeTimestamps,
     dateRange: DateRange,
     userLogin: string,
   ): Promise<Contribution[]> {
-    // Process all repositories in parallel
     const repositoryPromises = commitsByRepository.map(async (repositoryWrapper) => {
       const repository = repositoryWrapper.repository;
       if (!repository) return [];
@@ -357,7 +326,6 @@ export class GitHubConnector implements Connector {
       const repositoryName = repository.nameWithOwner;
       const defaultBranchRef = repository.defaultBranchRef;
 
-      // Handle repositories without a default branch (empty repositories)
       if (!defaultBranchRef?.target?.history) return [];
 
       const branchName = defaultBranchRef.name;
@@ -366,14 +334,12 @@ export class GitHubConnector implements Connector {
 
       const contributions: Contribution[] = [];
 
-      // Process initial batch of commits
       for (const commit of commitNodes) {
         if (!commit) continue;
 
         const timestamp = commit.committedDate;
-        if (!timestamp || typeof timestamp !== 'string') continue;
+        if (!timestamp) continue;
 
-        // Filter commits by date range
         const commitTimestamp = Date.parse(timestamp);
         if (Number.isNaN(commitTimestamp)) continue;
 
@@ -384,7 +350,6 @@ export class GitHubConnector implements Connector {
           continue;
         }
 
-        // Filter commits by author: only include commits by the authenticated user
         const authorLogin = commit.author?.user?.login;
         if (!authorLogin || authorLogin !== userLogin) {
           continue;
@@ -400,7 +365,6 @@ export class GitHubConnector implements Connector {
         });
       }
 
-      // If there are more pages, fetch them
       if (
         history.pageInfo?.hasNextPage &&
         history.pageInfo.endCursor &&
@@ -418,7 +382,6 @@ export class GitHubConnector implements Connector {
             userLogin,
           );
 
-          // Filter paginated commits by date range
           for (const commit of paginatedCommits) {
             const commitTimestamp = Date.parse(commit.timestamp);
             if (
@@ -439,9 +402,6 @@ export class GitHubConnector implements Connector {
     return allResults.flat();
   }
 
-  /**
-   * Extracts pull request contributions from GraphQL response.
-   */
   private extractPullRequestContributions(pullRequestNodes: GraphQLPRNode[]): Contribution[] {
     const contributions: Contribution[] = [];
 
@@ -461,9 +421,6 @@ export class GitHubConnector implements Connector {
     return contributions;
   }
 
-  /**
-   * Extracts pull request review contributions from GraphQL response.
-   */
   private extractReviewContributions(reviewNodes: GraphQLReviewNode[]): Contribution[] {
     const contributions: Contribution[] = [];
 
@@ -483,18 +440,10 @@ export class GitHubConnector implements Connector {
     return contributions;
   }
 
-  /**
-   * Deduplicates contributions by composite key: type|timestamp|url|text|repository|target.
-   */
   private deduplicateContributions(contributions: Contribution[]): Contribution[] {
     return deduplicateContributions(contributions);
   }
 
-  /**
-   * Fetches all contributions for the authenticated user within the date range.
-   * Uses GraphQL API to fetch commits (filtered by author), PRs, and reviews.
-   * Optimized with timestamps and parallel extraction where possible.
-   */
   async fetchContributions(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
     const startTime = Date.now();
     const login = await this.getUserLogin();
@@ -542,87 +491,273 @@ export class GitHubConnector implements Connector {
     return this.deduplicateContributions(allContributions);
   }
 
-  /**
-   * Fetches events from GitHub Events API.
-   * Tries both public and private endpoints to get complete event data.
-   *
-   * @param login - GitHub username
-   * @returns Array of GitHub events
-   */
-  private async fetchEventsApiData(login: string): Promise<GitHubEvent[]> {
-    try {
-      // Try fetching from user-specific events endpoint (includes both public and authenticated user's private events)
-      // This endpoint is better than /users/{username}/events as it includes private repo events
-      const eventsResponse = await this.octokit.request('GET /users/{username}/events', {
-        username: login,
-        per_page: 100,
-      });
-
-      const rawData = eventsResponse.data;
-
-      if (!Array.isArray(rawData)) {
-        return [];
-      }
-
-      return rawData as GitHubEvent[];
-    } catch (error) {
-      // Log warnings for authentication or rate limit errors
-      if (error && typeof error === 'object' && 'status' in error) {
-        const status = (error as { status: number }).status;
-        if (status === 401) {
-          console.warn('Warning: GitHub Events API authentication failed. Check your token.');
-        } else if (status === 403) {
-          console.warn('Warning: GitHub Events API rate limit exceeded or access forbidden.');
-        } else {
-          console.warn(
-            `Warning: GitHub Events API returned status ${status}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      } else {
-        console.warn(
-          `Warning: Error fetching from GitHub Events API: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      return [];
-    }
-  }
-
-  /**
-   * Helper to format timestamp for logging.
-   */
   private formatLogTimestamp(): string {
     return new Date().toISOString().substring(11, 23); // HH:mm:ss.SSS
   }
 
-  /**
-   * Fetches all commits from ALL branches using optimized 2-phase approach.
-   * Unlike fetchContributions which filters by base branches,
-   * this method returns all commits the user authored on any branch.
-   *
-   * Strategy:
-   * Phase 1: Active branches - query commits from all current branches (parallelized)
-   * Phase 2: Merged PRs - extract commits from merged pull requests (parallelized, captures deleted branches)
-   *
-   * Performance optimizations:
-   * - Parallelized repository processing
-   * - Parallelized branch queries within each repository
-   * - Parallelized PR queries within each repository
-   * - Removed redundant Events API phase
-   *
-   * This comprehensive approach:
-   * - Finds commits on active feature branches
-   * - Finds commits from deleted branches via merged PRs
-   * - No 300 event limit
-   * - Full pagination support
-   *
-   * @param from - Start date
-   * @param to - End date
-   * @returns Array of commit contributions from all branches
-   */
+  private async fetchBranchCommits(
+    owner: string,
+    repository: string,
+    branchName: string,
+    login: string,
+    dateRange: DateRange,
+    repositoryName: string,
+  ): Promise<Contribution[]> {
+    try {
+      const branchCommits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, {
+        owner,
+        repo: repository,
+        sha: branchName,
+        author: login,
+        since: dateRange.from,
+        until: dateRange.to,
+        per_page: 100,
+      });
+
+      return branchCommits
+        .map((commit): Contribution | null => {
+          if (!commit.commit?.author?.date) return null;
+
+          const commitMessage = commit.commit.message || '';
+          const firstLine = commitMessage.split('\n')[0];
+
+          return {
+            type: 'commit',
+            timestamp: commit.commit.author.date,
+            text: firstLine,
+            url: commit.html_url,
+            repository: repositoryName,
+            target: branchName,
+          };
+        })
+        .filter((item): item is Contribution => item !== null);
+    } catch (branchError) {
+      return [];
+    }
+  }
+
+  private async fetchCommitsFromAllBranches(
+    owner: string,
+    repository: string,
+    branches: Array<{ name: string }>,
+    login: string,
+    dateRange: DateRange,
+    repositoryName: string,
+  ): Promise<Contribution[]> {
+    console.log(
+      `[${this.formatLogTimestamp()}] ${repositoryName}: processing ${branches.length} branches in parallel...`,
+    );
+
+    const branchCommitPromises = branches.map((branch) =>
+      this.fetchBranchCommits(owner, repository, branch.name, login, dateRange, repositoryName),
+    );
+
+    const branchResults = await Promise.all(branchCommitPromises);
+    const branchContributions = branchResults.flat();
+
+    console.log(
+      `[${this.formatLogTimestamp()}] ${repositoryName}: found ${branchContributions.length} commits from active branches`,
+    );
+
+    return branchContributions;
+  }
+
+  private async fetchPullRequestCommits(
+    owner: string,
+    repository: string,
+    pullRequest: { number: number; head?: { ref?: string } },
+    login: string,
+    dateRangeTimestamps: DateRangeTimestamps,
+    repositoryName: string,
+  ): Promise<Contribution[]> {
+    try {
+      const pullRequestCommits = await this.octokit.paginate(this.octokit.rest.pulls.listCommits, {
+        owner,
+        repo: repository,
+        pull_number: pullRequest.number,
+        per_page: 100,
+      });
+
+      const headBranch = pullRequest.head?.ref;
+
+      return pullRequestCommits
+        .map((commit): Contribution | null => {
+          if (!commit.commit?.author?.date) return null;
+
+          if (commit.author?.login !== login && commit.committer?.login !== login) {
+            return null;
+          }
+
+          const commitTimestamp = Date.parse(commit.commit.author.date);
+
+          if (
+            commitTimestamp < dateRangeTimestamps.fromTimestamp ||
+            commitTimestamp > dateRangeTimestamps.toTimestamp
+          ) {
+            return null;
+          }
+
+          const commitMessage = commit.commit.message || '';
+          const firstLine = commitMessage.split('\n')[0];
+
+          return {
+            type: 'commit',
+            timestamp: commit.commit.author.date,
+            text: firstLine,
+            url: commit.html_url,
+            repository: repositoryName,
+            target: headBranch,
+          };
+        })
+        .filter((item): item is Contribution => item !== null);
+    } catch (pullRequestError) {
+      return [];
+    }
+  }
+
+  private filterUserMergedPullRequests<
+    T extends {
+      merged_at?: string | null;
+      user?: { login?: string } | null;
+    },
+  >(pullRequests: T[], login: string, dateRangeTimestamps: DateRangeTimestamps): T[] {
+    return pullRequests.filter((pullRequest) => {
+      if (!pullRequest.merged_at) return false;
+      if (pullRequest.user?.login !== login) return false;
+
+      const mergedTimestamp = Date.parse(pullRequest.merged_at);
+
+      return (
+        mergedTimestamp >= dateRangeTimestamps.fromTimestamp &&
+        mergedTimestamp <= dateRangeTimestamps.toTimestamp
+      );
+    });
+  }
+
+  private async fetchCommitsFromMergedPullRequests(
+    owner: string,
+    repository: string,
+    pullRequests: Array<{
+      merged_at?: string | null;
+      user?: { login?: string } | null;
+      number: number;
+      head?: { ref?: string };
+    }>,
+    login: string,
+    dateRangeTimestamps: DateRangeTimestamps,
+    repositoryName: string,
+  ): Promise<Contribution[]> {
+    const userMergedPRs = this.filterUserMergedPullRequests(
+      pullRequests,
+      login,
+      dateRangeTimestamps,
+    );
+
+    console.log(
+      `[${this.formatLogTimestamp()}] ${repositoryName}: processing ${userMergedPRs.length} merged PRs in parallel...`,
+    );
+
+    const pullRequestCommitPromises = userMergedPRs.map((pullRequest) =>
+      this.fetchPullRequestCommits(
+        owner,
+        repository,
+        pullRequest,
+        login,
+        dateRangeTimestamps,
+        repositoryName,
+      ),
+    );
+
+    const pullRequestResults = await Promise.all(pullRequestCommitPromises);
+    const pullRequestContributions = pullRequestResults.flat();
+
+    console.log(
+      `[${this.formatLogTimestamp()}] ${repositoryName}: found ${pullRequestContributions.length} commits from merged PRs`,
+    );
+
+    return pullRequestContributions;
+  }
+
+  private async fetchRepositoryCommits(
+    owner: string,
+    repository: string,
+    repositoryName: string,
+    login: string,
+    dateRange: DateRange,
+    dateRangeTimestamps: DateRangeTimestamps,
+  ): Promise<Contribution[]> {
+    const repositoryContributions: Contribution[] = [];
+
+    try {
+      console.log(`[${this.formatLogTimestamp()}] ${repositoryName}: fetching branches...`);
+      const branchesPromise = this.octokit.paginate(this.octokit.rest.repos.listBranches, {
+        owner,
+        repo: repository,
+        per_page: 100,
+      });
+
+      console.log(`[${this.formatLogTimestamp()}] ${repositoryName}: fetching merged PRs...`);
+      const pullRequestsPromise = this.octokit.paginate(this.octokit.rest.pulls.list, {
+        owner,
+        repo: repository,
+        state: 'closed',
+        sort: 'updated',
+        direction: 'desc',
+        per_page: 100,
+      });
+
+      const [branches, allPullRequests] = await Promise.all([branchesPromise, pullRequestsPromise]);
+
+      const branchContributions = await this.fetchCommitsFromAllBranches(
+        owner,
+        repository,
+        branches,
+        login,
+        dateRange,
+        repositoryName,
+      );
+      repositoryContributions.push(...branchContributions);
+
+      const pullRequestContributions = await this.fetchCommitsFromMergedPullRequests(
+        owner,
+        repository,
+        allPullRequests,
+        login,
+        dateRangeTimestamps,
+        repositoryName,
+      );
+      repositoryContributions.push(...pullRequestContributions);
+    } catch (error) {
+      console.warn(
+        `[${this.formatLogTimestamp()}] Warning: Failed to process ${repositoryName}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    return repositoryContributions;
+  }
+
+  private async discoverRepositories(login: string, dateRange: DateRange): Promise<string[]> {
+    console.log(`[${this.formatLogTimestamp()}] Discovering repositories...`);
+    const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
+
+    if (!contributionsCollection?.commitContributionsByRepository) {
+      return [];
+    }
+
+    const repositories = contributionsCollection.commitContributionsByRepository
+      .map((item) => item.repository?.nameWithOwner)
+      .filter((name): name is string => !!name);
+
+    console.log(
+      `[${this.formatLogTimestamp()}] Found ${repositories.length} repositories to check`,
+    );
+
+    return repositories;
+  }
+
   async fetchAllCommits(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
     const startTime = Date.now();
     const login = await this.getUserLogin();
-    const contributions: Contribution[] = [];
 
     const dateRange: DateRange = {
       from: from.toISOString(),
@@ -632,198 +767,31 @@ export class GitHubConnector implements Connector {
     const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
 
     try {
-      // Discover repositories
-      console.log(`[${this.formatLogTimestamp()}] Discovering repositories...`);
-      const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
+      const repositories = await this.discoverRepositories(login, dateRange);
 
-      if (contributionsCollection?.commitContributionsByRepository) {
-        const repositories = contributionsCollection.commitContributionsByRepository
-          .map((item) => item.repository?.nameWithOwner)
-          .filter((name): name is string => !!name);
+      const repositoryPromises = repositories.map(async (repositoryName) => {
+        const [owner, repo] = repositoryName.split('/');
+        if (!owner || !repo) return [];
 
-        console.log(
-          `[${this.formatLogTimestamp()}] Found ${repositories.length} repositories to check`,
+        return this.fetchRepositoryCommits(
+          owner,
+          repo,
+          repositoryName,
+          login,
+          dateRange,
+          dateRangeTimestamps,
         );
+      });
 
-        // Process all repositories in parallel
-        const repositoryPromises = repositories.map(async (repositoryName) => {
-          const [owner, repo] = repositoryName.split('/');
-          if (!owner || !repo) return [];
-
-          const repositoryContributions: Contribution[] = [];
-
-          try {
-            // PHASE 1: Fetch branches and commits in parallel
-            console.log(`[${this.formatLogTimestamp()}] ${repositoryName}: fetching branches...`);
-            const branchesPromise = this.octokit.paginate(this.octokit.rest.repos.listBranches, {
-              owner,
-              repo,
-              per_page: 100,
-            });
-
-            // PHASE 2: Fetch merged PRs in parallel
-            console.log(`[${this.formatLogTimestamp()}] ${repositoryName}: fetching merged PRs...`);
-            const pullRequestsPromise = this.octokit.paginate(this.octokit.rest.pulls.list, {
-              owner,
-              repo,
-              state: 'closed',
-              sort: 'updated',
-              direction: 'desc',
-              per_page: 100,
-            });
-
-            // Wait for both branches and PRs
-            const [branches, allPullRequests] = await Promise.all([
-              branchesPromise,
-              pullRequestsPromise,
-            ]);
-
-            console.log(
-              `[${this.formatLogTimestamp()}] ${repositoryName}: processing ${branches.length} branches in parallel...`,
-            );
-
-            // Query commits from all branches in parallel
-            const branchCommitPromises = branches.map(async (branch) => {
-              try {
-                const branchCommits = await this.octokit.paginate(
-                  this.octokit.rest.repos.listCommits,
-                  {
-                    owner,
-                    repo,
-                    sha: branch.name,
-                    author: login,
-                    since: dateRange.from,
-                    until: dateRange.to,
-                    per_page: 100,
-                  },
-                );
-
-                return branchCommits
-                  .map((commit): Contribution | null => {
-                    if (!commit.commit?.author?.date) return null;
-
-                    const commitMessage = commit.commit.message || '';
-                    const firstLine = commitMessage.split('\n')[0];
-
-                    return {
-                      type: 'commit',
-                      timestamp: commit.commit.author.date,
-                      text: firstLine,
-                      url: commit.html_url,
-                      repository: repositoryName,
-                      target: branch.name,
-                    };
-                  })
-                  .filter((item): item is Contribution => item !== null);
-              } catch (branchError) {
-                // Branch might be inaccessible, skip it
-                return [];
-              }
-            });
-
-            const branchResults = await Promise.all(branchCommitPromises);
-            const branchContributions = branchResults.flat();
-
-            repositoryContributions.push(...branchContributions);
-            console.log(
-              `[${this.formatLogTimestamp()}] ${repositoryName}: found ${branchContributions.length} commits from active branches`,
-            );
-
-            // Filter to only merged PRs by the authenticated user in date range
-            const userMergedPRs = allPullRequests.filter((pullRequest) => {
-              if (!pullRequest.merged_at) return false;
-              if (pullRequest.user?.login !== login) return false;
-
-              const mergedTimestamp = Date.parse(pullRequest.merged_at);
-
-              return (
-                mergedTimestamp >= dateRangeTimestamps.fromTimestamp &&
-                mergedTimestamp <= dateRangeTimestamps.toTimestamp
-              );
-            });
-
-            console.log(
-              `[${this.formatLogTimestamp()}] ${repositoryName}: processing ${userMergedPRs.length} merged PRs in parallel...`,
-            );
-
-            // Process all PRs in parallel
-            const pullRequestCommitPromises = userMergedPRs.map(async (pullRequest) => {
-              try {
-                const pullRequestCommits = await this.octokit.paginate(
-                  this.octokit.rest.pulls.listCommits,
-                  {
-                    owner,
-                    repo,
-                    pull_number: pullRequest.number,
-                    per_page: 100,
-                  },
-                );
-
-                const headBranch = pullRequest.head?.ref;
-
-                return pullRequestCommits
-                  .map((commit): Contribution | null => {
-                    if (!commit.commit?.author?.date) return null;
-
-                    // Only include commits by the authenticated user
-                    if (commit.author?.login !== login && commit.committer?.login !== login) {
-                      return null;
-                    }
-
-                    // Check if commit is in date range
-                    const commitTimestamp = Date.parse(commit.commit.author.date);
-
-                    if (
-                      commitTimestamp < dateRangeTimestamps.fromTimestamp ||
-                      commitTimestamp > dateRangeTimestamps.toTimestamp
-                    ) {
-                      return null;
-                    }
-
-                    const commitMessage = commit.commit.message || '';
-                    const firstLine = commitMessage.split('\n')[0];
-
-                    return {
-                      type: 'commit',
-                      timestamp: commit.commit.author.date,
-                      text: firstLine,
-                      url: commit.html_url,
-                      repository: repositoryName,
-                      target: headBranch,
-                    };
-                  })
-                  .filter((item): item is Contribution => item !== null);
-              } catch (pullRequestError) {
-                // PR might be inaccessible, skip it
-                return [];
-              }
-            });
-
-            const pullRequestResults = await Promise.all(pullRequestCommitPromises);
-            const pullRequestContributions = pullRequestResults.flat();
-
-            repositoryContributions.push(...pullRequestContributions);
-            console.log(
-              `[${this.formatLogTimestamp()}] ${repositoryName}: found ${pullRequestContributions.length} commits from merged PRs`,
-            );
-          } catch (error) {
-            console.warn(
-              `[${this.formatLogTimestamp()}] Warning: Failed to process ${repositoryName}: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-
-          return repositoryContributions;
-        });
-
-        // Wait for all repositories to complete
-        const allRepositoryResults = await Promise.all(repositoryPromises);
-        contributions.push(...allRepositoryResults.flat());
-      }
+      const allRepositoryResults = await Promise.all(repositoryPromises);
+      const contributions = allRepositoryResults.flat();
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       console.log(
         `[${this.formatLogTimestamp()}] Total commits collected: ${contributions.length} (took ${duration}s)`,
       );
+
+      return this.deduplicateContributions(contributions);
     } catch (error) {
       if (error && typeof error === 'object' && 'status' in error) {
         const status = (error as { status: number }).status;
@@ -845,16 +813,20 @@ export class GitHubConnector implements Connector {
           `[${this.formatLogTimestamp()}] Warning: Error fetching commits from GitHub API: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-    }
 
-    return this.deduplicateContributions(contributions);
+      return this.deduplicateContributions([]);
+    }
   }
 }
 
-export const createGitHubConnector = (
-  token?: string,
-  configuration?: Configuration,
-): GitHubConnector => {
+/**
+ * Factory function to create a GitHub connector instance.
+ *
+ * @param token - GitHub personal access token
+ * @returns GitHubConnector instance
+ * @throws Error if token is missing or empty
+ */
+export const createGitHubConnector = (token?: string): GitHubConnector => {
   if (token === undefined || token === null) {
     throw new Error(
       'GH_TOKEN environment variable is missing. To create a GitHub token see README or https://github.com/settings/tokens',
@@ -864,10 +836,5 @@ export const createGitHubConnector = (
     throw new Error('A non-empty GitHub token string is required.');
   }
 
-  // Use provided configuration or defaults
-  const finalConfiguration: Configuration = configuration ?? {
-    baseBranches: ['main', 'master', 'develop', 'development'],
-  };
-
-  return new GitHubConnector(token, finalConfiguration);
+  return new GitHubConnector(token);
 };
