@@ -100,15 +100,20 @@ export const generateReport = async (
 };
 
 /**
- * Generates a commits-only report for the given date range.
- * Fetches ALL commits from ALL branches (not filtered by base branches).
- * Enriches with project IDs and sorts by timestamp.
+ * Generates a comprehensive report including ALL contributions.
+ * This includes:
+ * - All commits from ALL branches (including feature branches)
+ * - Pull requests
+ * - Reviews
+ *
+ * Unlike generateReport() which only includes base branch commits,
+ * this fetches commits from every branch the user has pushed to.
  *
  * @param connectors - Array of connector instances
  * @param configuration - Application configuration
  * @param from - Start date for the report
  * @param to - End date for the report
- * @returns Array of commit contributions from all branches
+ * @returns Array of all contributions (commits from all branches + PRs + reviews)
  */
 export const generateCommitsReport = async (
   connectors: Connector[],
@@ -126,42 +131,54 @@ export const generateCommitsReport = async (
   );
   console.log('Fetching all commits from all branches...\n');
 
-  const allCommits: Contribution[] = [];
+  const allContributions: Contribution[] = [];
 
-  // Fetch commits from all connectors in parallel using fetchAllCommits
+  // Fetch from all connectors in parallel
+  // Each connector fetches both all commits AND regular contributions (PRs, reviews)
   const results = await Promise.allSettled(
     connectorsWithNames.map(async ({ connector, name }) => {
       console.log(`Fetching commits from ${name}...`);
+
+      // Fetch commits from all branches
       const commits = await connector.fetchAllCommits(from, to);
-      console.log(`✓ Found ${commits.length} commits from ${name}`);
-      return commits;
+
+      console.log(`Fetching regular contributions from ${name}`);
+      // Also fetch regular contributions (PRs, reviews, and base branch commits)
+      const regularContributions = await connector.fetchContributions(from, to);
+
+      console.log(
+        `✓ Found ${commits.length + regularContributions.length} contributions from ${name}`,
+      );
+
+      // Merge both sets of contributions
+      return [...commits, ...regularContributions];
     }),
   );
 
   // Collect successful results
   for (const result of results) {
     if (result.status === 'fulfilled') {
-      allCommits.push(...result.value);
+      allContributions.push(...result.value);
     } else {
       console.warn(`Warning: Failed to fetch from a connector: ${result.reason}`);
     }
   }
 
-  // Deduplicate commits
-  const uniqueCommits = deduplicateContributions(allCommits);
+  // Deduplicate contributions (important since we might get same commits from both methods)
+  const uniqueContributions = deduplicateContributions(allContributions);
 
   // Sort by timestamp (newest first)
-  const sortedCommits = uniqueCommits.sort((a, b) => {
+  const sortedContributions = uniqueContributions.sort((a, b) => {
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
   // Enrich with project IDs
-  const enrichedCommits = enrichContributionsWithProjectIds(
-    sortedCommits,
+  const enrichedContributions = enrichContributionsWithProjectIds(
+    sortedContributions,
     configuration.repositoryProjectIds ?? {},
   );
 
-  console.log(`\nTotal: ${enrichedCommits.length} commits\n`);
+  console.log(`\nTotal: ${enrichedContributions.length} unique contributions\n`);
 
-  return enrichedCommits;
+  return enrichedContributions;
 };
