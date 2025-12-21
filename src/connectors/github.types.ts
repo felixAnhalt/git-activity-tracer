@@ -112,8 +112,8 @@ export interface DateRangeTimestamps {
 }
 
 export interface GitHubEvent {
-  type?: string;
-  created_at?: string;
+  type?: string | null;
+  created_at?: string | null;
   repo?: {
     name?: string;
   };

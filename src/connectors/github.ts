@@ -195,9 +195,7 @@ export class GitHubConnector implements Connector {
       return payload.user.contributionsCollection;
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error('Error fetching data from GitHub GraphQL API: ' + error.message, {
-          cause: error,
-        });
+        throw new Error('Error fetching data from GitHub GraphQL API: ' + error.message);
       }
       throw new Error('Error fetching data from GitHub GraphQL API: ' + String(error));
     }
@@ -590,6 +588,11 @@ export class GitHubConnector implements Connector {
    * Unlike fetchContributions which filters by base branches and authorship,
    * this method returns all commits the user pushed to any branch.
    *
+   * Performance optimizations:
+   * - Early filtering of non-PushEvents before processing
+   * - Aggressive pagination termination when past date range
+   * - Parallel batch fetching of commit details via compareCommits
+   *
    * Limitations of GitHub Events API:
    * - Maximum 300 events per user
    * - Events older than 90 days are not available
@@ -608,6 +611,7 @@ export class GitHubConnector implements Connector {
 
     try {
       // Fetch events using pagination to get up to 300 events
+      // Apply early filtering during pagination to reduce unnecessary data transfer
       const events = await this.octokit.paginate(
         'GET /users/{username}/events',
         {
@@ -615,7 +619,7 @@ export class GitHubConnector implements Connector {
           per_page: 100,
         },
         (response, done) => {
-          // Stop pagination if we've gone past the date range
+          // Early termination: stop if we've gone past the date range
           const lastEvent = response.data[response.data.length - 1];
           if (lastEvent && lastEvent.created_at) {
             const lastEventTime = new Date(lastEvent.created_at).getTime();
@@ -623,64 +627,133 @@ export class GitHubConnector implements Connector {
               done();
             }
           }
-          return response.data;
+
+          // Early filtering: only return PushEvents to reduce memory usage
+          return response.data.filter(
+            (event) => event.type === 'PushEvent' && event.created_at,
+          ) as GitHubEvent[];
         },
       );
 
-      // Process PushEvents to extract commits
-      for (const event of events) {
-        if (event.type !== 'PushEvent') continue;
-        if (!event.created_at) continue;
-
+      // Filter events by date range early (before processing)
+      const pushEventsInRange = events.filter((event) => {
+        if (!event.created_at) return false;
         const eventTimestamp = new Date(event.created_at).getTime();
+        return eventTimestamp >= fromTimestamp && eventTimestamp <= toTimestamp;
+      });
 
-        // Filter by date range
-        if (eventTimestamp < fromTimestamp || eventTimestamp > toTimestamp) {
-          continue;
-        }
+      // Separate events into two groups:
+      // 1. Events that already have commit data (rare)
+      // 2. Events that need commit data fetched via API (common)
+      const eventsWithCommits: GitHubEvent[] = [];
+      const eventsNeedingFetch: Array<{
+        event: GitHubEvent;
+        owner: string;
+        repo: string;
+        before: string;
+        head: string;
+        repository: string;
+        branchName: string | undefined;
+      }> = [];
 
+      for (const event of pushEventsInRange) {
         const payload = event.payload as GitHubEventPayload;
         const repository = event.repo?.name;
         const ref = payload?.ref;
         const branchName = ref?.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : ref;
 
-        // Check if commits array exists and has data (this rarely happens in Events API)
+        // Check if commits array exists and has data (rare in Events API)
         if (payload?.commits && Array.isArray(payload.commits) && payload.commits.length > 0) {
-          // Extract each commit from the push event
-          for (const commit of payload.commits) {
-            if (!commit.message) continue;
-
-            contributions.push({
-              type: 'commit',
-              timestamp: event.created_at,
-              text: commit.message.split('\n')[0], // First line of commit message
-              url: commit.url,
-              repository,
-              target: branchName,
-            });
-          }
+          eventsWithCommits.push(event);
         } else if (payload?.head && payload?.before && repository) {
-          // Events API doesn't include commit details, so fetch them using Commits API
-          // Use compare endpoint to get commits between before and after SHAs
-          try {
-            const [owner, repo] = repository.split('/');
-            if (!owner || !repo) continue;
-
-            const comparison = await this.octokit.rest.repos.compareCommits({
+          const [owner, repo] = repository.split('/');
+          if (owner && repo) {
+            eventsNeedingFetch.push({
+              event,
               owner,
               repo,
-              base: payload.before,
+              before: payload.before,
               head: payload.head,
+              repository,
+              branchName,
+            });
+          }
+        } else {
+          // Missing required payload data, create fallback entry immediately
+          contributions.push({
+            type: 'commit',
+            timestamp: event.created_at!,
+            text: `Push to ${branchName || 'unknown branch'}`,
+            repository,
+            target: branchName,
+          });
+        }
+      }
+
+      // Process events that already have commit data (fast path)
+      for (const event of eventsWithCommits) {
+        const payload = event.payload as GitHubEventPayload;
+        const repository = event.repo?.name;
+        const ref = payload?.ref;
+        const branchName = ref?.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : ref;
+
+        for (const commit of payload.commits!) {
+          if (!commit.message) continue;
+
+          contributions.push({
+            type: 'commit',
+            timestamp: event.created_at!,
+            text: commit.message.split('\n')[0], // First line of commit message
+            url: commit.url,
+            repository,
+            target: branchName,
+          });
+        }
+      }
+
+      // Batch fetch commit details for all events in parallel (major performance improvement)
+      if (eventsNeedingFetch.length > 0) {
+        const comparisonPromises = eventsNeedingFetch.map(async (eventInfo) => {
+          try {
+            const comparison = await this.octokit.rest.repos.compareCommits({
+              owner: eventInfo.owner,
+              repo: eventInfo.repo,
+              base: eventInfo.before,
+              head: eventInfo.head,
             });
 
+            return {
+              success: true as const,
+              eventInfo,
+              comparison: comparison.data,
+            };
+          } catch (error) {
+            return {
+              success: false as const,
+              eventInfo,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        });
+
+        // Execute all comparison requests in parallel
+        const results = await Promise.all(comparisonPromises);
+
+        // Process results
+        for (const result of results) {
+          const { eventInfo } = result;
+          const { event, repository, branchName } = eventInfo;
+
+          if (result.success) {
             // Extract commits from comparison and filter by authenticated user
-            if (comparison.data.commits && comparison.data.commits.length > 0) {
-              for (const commit of comparison.data.commits) {
+            const { comparison } = result;
+            if (comparison.commits && comparison.commits.length > 0) {
+              for (const commit of comparison.commits) {
                 // Only include commits authored by the authenticated user
                 if (commit.author?.login === login || commit.committer?.login === login) {
                   contributions.push({
                     type: 'commit',
-                    timestamp: event.created_at,
+                    timestamp: event.created_at!,
                     text: commit.commit.message.split('\n')[0], // First line of commit message
                     url: commit.html_url,
                     repository,
@@ -692,34 +765,25 @@ export class GitHubConnector implements Connector {
               // No commits in comparison, create fallback entry
               contributions.push({
                 type: 'commit',
-                timestamp: event.created_at,
+                timestamp: event.created_at!,
                 text: `Push to ${branchName}`,
                 repository,
                 target: branchName,
               });
             }
-          } catch (error) {
-            // If fetching commits fails (e.g., commits deleted, force push), create fallback entry
+          } else {
+            // If fetching commits failed (e.g., commits deleted, force push), create fallback entry
             console.warn(
-              `Warning: Could not fetch commits for ${repository} ${branchName}: ${error instanceof Error ? error.message : String(error)}`,
+              `Warning: Could not fetch commits for ${repository} ${branchName}: ${result.error}`,
             );
             contributions.push({
               type: 'commit',
-              timestamp: event.created_at,
+              timestamp: event.created_at!,
               text: `Push to ${branchName}`,
               repository,
               target: branchName,
             });
           }
-        } else {
-          // Missing required payload data, create fallback entry
-          contributions.push({
-            type: 'commit',
-            timestamp: event.created_at,
-            text: `Push to ${branchName || 'unknown branch'}`,
-            repository,
-            target: branchName,
-          });
         }
       }
     } catch (error) {
