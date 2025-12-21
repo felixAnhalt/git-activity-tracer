@@ -1,6 +1,12 @@
 import type { Contribution } from '../../types.js';
 
 /**
+ * Common base branch names to prioritize in deduplication.
+ * When duplicates exist, we prefer commits shown as being on these branches.
+ */
+const BASE_BRANCHES = ['main', 'master', 'develop', 'development', 'trunk'];
+
+/**
  * Creates a composite key for a contribution.
  * For commits with URLs, use URL as primary identifier (most reliable).
  * For contributions without URLs, fall back to composite key.
@@ -24,13 +30,52 @@ const makeKey = (contribution: Contribution): string => {
 };
 
 /**
+ * Determines if a branch is a base branch (main, master, develop, etc.)
+ */
+const isBaseBranch = (branchName: string | undefined): boolean => {
+  if (!branchName) return false;
+  return BASE_BRANCHES.includes(branchName.toLowerCase());
+};
+
+/**
+ * Determines which contribution to prefer when duplicates are found.
+ * Priority order:
+ * 1. Contributions from base branches (main, master, develop, etc.)
+ * 2. Contributions with target branch info over those without
+ * 3. First one encountered (existing)
+ */
+const preferContribution = (existing: Contribution, candidate: Contribution): Contribution => {
+  const existingIsBaseBranch = isBaseBranch(existing.target);
+  const candidateIsBaseBranch = isBaseBranch(candidate.target);
+
+  // If candidate is from base branch but existing isn't, prefer candidate
+  if (candidateIsBaseBranch && !existingIsBaseBranch) {
+    return candidate;
+  }
+
+  // If existing is from base branch but candidate isn't, keep existing
+  if (existingIsBaseBranch && !candidateIsBaseBranch) {
+    return existing;
+  }
+
+  // Both are base branches or both are feature branches
+  // Prefer contribution with target (branch name) over one without
+  if (candidate.target && !existing.target) {
+    return candidate;
+  }
+
+  // Otherwise keep existing
+  return existing;
+};
+
+/**
  * Deduplicates an array of contributions.
  * Strategy:
  * - For commits/PRs/reviews with URLs: deduplicate by URL (most reliable)
  * - For contributions without URLs: use composite key (type|timestamp|text|repository|target)
  *
- * When duplicates are found, prefer contributions with more complete information
- * (e.g., prefer entry with branch name over entry without).
+ * When duplicates are found, prefer contributions with base branch info (main, master, etc.)
+ * over feature branches, and prefer contributions with branch info over those without.
  *
  * @param contributions - Array of contributions to deduplicate
  * @returns Array of unique contributions in original order
@@ -45,14 +90,10 @@ export const deduplicateContributions = (contributions: Contribution[]): Contrib
       // First time seeing this contribution
       seen.set(key, contribution);
     } else {
-      // Duplicate found - prefer the one with more information
+      // Duplicate found - use smart preference logic
       const existing = seen.get(key)!;
-
-      // Prefer contribution with target (branch name) over one without
-      if (contribution.target && !existing.target) {
-        seen.set(key, contribution);
-      }
-      // If both have target or both don't have target, keep the first one (existing)
+      const preferred = preferContribution(existing, contribution);
+      seen.set(key, preferred);
     }
   }
 
