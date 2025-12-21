@@ -13,6 +13,7 @@ npm install -g @tmegit/git-activity-tracer
 ### Using npx (No installation required)
 
 ### Example: Fetch activity for January 2025
+
 ```bash
 npx @tmegit/git-activity-tracer 2025-01-01 2025-01-31
 ```
@@ -92,14 +93,16 @@ The tool automatically detects available tokens and fetches from all configured 
 
 ## Command Line Options
 
-| Option              | Description                                | Default                |
-|---------------------| ------------------------------------------ | ---------------------- |
-| `<fromdate>`        | Start date in YYYY-MM-DD format            | Monday of current week |
-| `<todate>`          | End date in YYYY-MM-DD format              | Today                  |
-| `--with-links`      | Include URLs in console output             | false                  |
-| `--format <format>` | Output format: `console`, `json`, or `csv` | `console`              |
-| `config`            | Display configuration file location        | -                      |
-| `project-id`        | Manage repository project ID mappings      | -                      |
+| Option              | Description                                     | Default                |
+| ------------------- | ----------------------------------------------- | ---------------------- |
+| `<fromdate>`        | Start date in YYYY-MM-DD format                 | Monday of current week |
+| `<todate>`          | End date in YYYY-MM-DD format                   | Today                  |
+| `--with-links`      | Include URLs in console output                  | false                  |
+| `--format <format>` | Output format: `console`, `json`, or `csv`      | `console`              |
+| `config`            | Display configuration file location             | -                      |
+| `project-id`        | Manage repository project ID mappings           | -                      |
+| `commits`           | Show commits-only report (see 'Usage Examples') | -                      |
+
 
 ## Usage Examples
 

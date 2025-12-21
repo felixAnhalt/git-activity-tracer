@@ -10,6 +10,38 @@ const __dirname = dirname(__filename);
 const packageJson = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
 
 /**
+ * Parses date range arguments from CLI input.
+ * Handles presets (last-week, last-month, this-week) and explicit date ranges.
+ *
+ * @param arguments_ - Array of string arguments to parse
+ * @returns Parsed date range with from/to dates and preset flags
+ */
+const parseDateRangeArguments = (
+  arguments_: string[],
+): Pick<CliArguments, 'from' | 'to' | 'lastweek' | 'lastmonth'> => {
+  let from: string | undefined;
+  let to: string | undefined;
+  let lastweek = false;
+  let lastmonth = false;
+
+  if (arguments_.length > 0 && typeof arguments_[0] === 'string') {
+    const firstArgument = arguments_[0].toLowerCase();
+    if (firstArgument === 'last-week' || firstArgument === 'lastweek') {
+      lastweek = true;
+    } else if (firstArgument === 'last-month' || firstArgument === 'lastmonth') {
+      lastmonth = true;
+    } else if (firstArgument === 'this-week' || firstArgument === 'thisweek') {
+      // Default behavior
+    } else {
+      from = arguments_[0];
+      to = arguments_[1];
+    }
+  }
+
+  return { from, to, lastweek, lastmonth };
+};
+
+/**
  * Parses command-line arguments using commander.
  * Returns strongly-typed, validated CLI arguments.
  *
@@ -64,6 +96,18 @@ export const parseCliArguments = (): CliArguments => {
       // Handled in main CLI logic
     });
 
+  // Commits command - show all commits only
+  program
+    .command('commits')
+    .description('Show all commits within date range')
+    .argument('[from]', 'Start date (YYYY-MM-DD or preset: last-week, last-month, this-week)')
+    .argument('[to]', 'End date (YYYY-MM-DD)')
+    .option('-f, --format <type>', 'Output format', 'console')
+    .option('-l, --with-links', 'Include URLs in output', false)
+    .action(() => {
+      // Handled in main CLI logic
+    });
+
   program.parse(process.argv);
 
   const options = program.opts();
@@ -95,32 +139,26 @@ export const parseCliArguments = (): CliArguments => {
     };
   }
 
-  // Handle date range presets
-  let from: string | undefined;
-  let to: string | undefined;
-  let lastweek = false;
-  let lastmonth = false;
+  // Handle commits command
+  if (commandName === 'commits') {
+    const subArgs = args.slice(1);
+    const dateRange = parseDateRangeArguments(subArgs);
 
-  if (args.length > 0 && typeof args[0] === 'string') {
-    const firstArgument = args[0].toLowerCase();
-    if (firstArgument === 'last-week' || firstArgument === 'lastweek') {
-      lastweek = true;
-    } else if (firstArgument === 'last-month' || firstArgument === 'lastmonth') {
-      lastmonth = true;
-    } else if (firstArgument === 'this-week' || firstArgument === 'thisweek') {
-      // Default behavior - use current week
-    } else {
-      from = args[0];
-      to = args[1];
-    }
+    return {
+      commandType: 'commits',
+      ...dateRange,
+      withLinks: options.withLinks,
+      output: (options.format as OutputFormat) ?? 'console',
+      showConfig: false,
+    };
   }
+
+  // Handle date range presets for default report
+  const dateRange = parseDateRangeArguments(args);
 
   // Default report generation
   return {
-    from,
-    to,
-    lastweek,
-    lastmonth,
+    ...dateRange,
     withLinks: options.withLinks,
     output: (options.format as OutputFormat) ?? 'console',
     showConfig: false,

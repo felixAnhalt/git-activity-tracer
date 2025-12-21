@@ -2,6 +2,7 @@ import { parseCliArguments } from './parser.js';
 import { handleShowConfigCommand } from './commands/showConfig.js';
 import { handleProjectIdCommand } from './commands/projectId.js';
 import { runContributionReport } from './commands/report.js';
+import { runCommitsReport } from './commands/commits.js';
 import { handleError } from './errorHandler.js';
 
 /**
@@ -11,6 +12,7 @@ import { handleError } from './errorHandler.js';
  * Handles:
  * - config: Display configuration and exit
  * - project-id: Manage repository project ID mappings
+ * - commits: Show all commits only
  * - default: Run contribution report
  */
 export const main = async () => {
@@ -24,6 +26,11 @@ export const main = async () => {
 
     if (cliArguments.projectIdCommand) {
       await handleProjectIdCommand(cliArguments.projectIdArgs ?? []);
+      return;
+    }
+
+    if (cliArguments.commandType === 'commits') {
+      await runCommitsReport(cliArguments);
       return;
     }
 

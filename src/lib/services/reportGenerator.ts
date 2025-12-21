@@ -98,3 +98,45 @@ export const generateReport = async (
 
   return enrichedContributions;
 };
+
+/**
+ * Generates a commits-only report for the given date range.
+ * Fetches all contributions from connectors, filters to commits only,
+ * enriches with project IDs, and sorts by timestamp.
+ *
+ * @param connectors - Array of connector instances
+ * @param configuration - Application configuration
+ * @param from - Start date for the report
+ * @param to - End date for the report
+ * @returns Array of commit contributions only
+ */
+export const generateCommitsReport = async (
+  connectors: Connector[],
+  configuration: Configuration,
+  from: Dayjs,
+  to: Dayjs,
+): Promise<Contribution[]> => {
+  const connectorsWithNames = connectors.map((connector) => ({
+    connector,
+    name: connector.getPlatformName(),
+  }));
+
+  console.log(
+    `Initialized ${connectors.length} connector(s): ${connectorsWithNames.map((c) => c.name).join(', ')}`,
+  );
+  console.log('Fetching commits only (excluding PRs and reviews)...\n');
+
+  const allContributions = await fetchAndMergeContributions(connectorsWithNames, from, to);
+
+  // Filter to commits only
+  const commits = allContributions.filter((contribution) => contribution.type === 'commit');
+
+  const enrichedCommits = enrichContributionsWithProjectIds(
+    commits,
+    configuration.repositoryProjectIds ?? {},
+  );
+
+  console.log(`\nTotal: ${enrichedCommits.length} commits\n`);
+
+  return enrichedCommits;
+};
