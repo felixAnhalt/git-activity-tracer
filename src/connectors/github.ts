@@ -584,20 +584,19 @@ export class GitHubConnector implements Connector {
   }
 
   /**
-   * Fetches all commits from ALL branches using GitHub REST API.
+   * Fetches all commits from ALL branches using GitHub Search API.
    * Unlike fetchContributions which filters by base branches,
    * this method returns all commits the user authored on any branch.
    *
    * Strategy:
-   * 1. Use GraphQL to discover repositories the user has contributed to
-   * 2. For each repository, use REST API /repos/{owner}/{repo}/commits
-   *    with date range filters to fetch ALL commits (not limited to 300 events)
-   * 3. Filter commits by author to only include user's commits
+   * Use GitHub Search API to find ALL commits by author within date range.
+   * Search API indexes commits across all branches, not just default branch.
    *
-   * This approach avoids GitHub Events API limitations:
-   * - No 300 event limit
-   * - No 30-day time restriction
+   * This approach avoids limitations:
+   * - No 300 event limit (Events API)
+   * - No default-branch-only restriction (REST Commits API)
    * - Full pagination support for complete commit history
+   * - Searches across all branches automatically
    *
    * @param from - Start date
    * @param to - End date
@@ -607,86 +606,46 @@ export class GitHubConnector implements Connector {
     const login = await this.getUserLogin();
     const contributions: Contribution[] = [];
 
-    const dateRange: DateRange = {
-      from: from.toISOString(),
-      to: to.toISOString(),
-    };
-
     try {
-      // Step 1: Use GraphQL to discover repositories the user has contributed to
-      console.log(`Discovering repositories for ${login}...`);
-      const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
+      // Format dates for GitHub Search API (YYYY-MM-DD format)
+      const fromDate = from.format('YYYY-MM-DD');
+      const toDate = to.format('YYYY-MM-DD');
 
-      if (!contributionsCollection?.commitContributionsByRepository) {
-        console.warn('Warning: No repositories found in contributions collection');
-        return [];
-      }
+      console.log(`Searching for all commits by ${login} from ${fromDate} to ${toDate}...`);
 
-      const repositories = contributionsCollection.commitContributionsByRepository
-        .map((item) => item.repository?.nameWithOwner)
-        .filter((name): name is string => !!name);
+      // Use GitHub Search API to find ALL commits by author across all branches
+      // Search query: author:{login} author-date:{from}..{to}
+      const searchQuery = `author:${login} author-date:${fromDate}..${toDate}`;
 
-      console.log(`Found ${repositories.length} repositories to scan for commits`);
-
-      // Step 2: For each repository, fetch ALL commits using REST API with date filters
-      const repositoryPromises = repositories.map(async (repositoryName) => {
-        const [owner, repo] = repositoryName.split('/');
-        if (!owner || !repo) return [];
-
-        try {
-          console.log(`  Fetching commits from ${repositoryName}...`);
-
-          // Use REST API to fetch commits with date range filters
-          // This endpoint supports pagination and has no 300-event limit
-          const commits = await this.octokit.paginate(
-            'GET /repos/{owner}/{repo}/commits',
-            {
-              owner,
-              repo,
-              author: login, // Filter by author on the server side
-              since: dateRange.from,
-              until: dateRange.to,
-              per_page: 100,
-            },
-            (response) => response.data,
-          );
-
-          console.log(`    Found ${commits.length} commits in ${repositoryName}`);
-
-          // Transform REST API commits to Contribution format
-          const repoContributions: Contribution[] = commits.map((commit) => {
-            // Extract branch information from commit (if available in refs)
-            // Note: REST API doesn't directly provide branch info, so we'll leave target undefined
-            // or try to extract from commit.url if needed
-            const commitMessage = commit.commit.message;
-            const firstLine = commitMessage.split('\n')[0];
-
-            return {
-              type: 'commit',
-              timestamp:
-                commit.commit.author?.date || commit.commit.committer?.date || dateRange.to,
-              text: firstLine,
-              url: commit.html_url,
-              repository: repositoryName,
-              target: undefined, // Branch info not available from this endpoint
-            };
-          });
-
-          return repoContributions;
-        } catch (error) {
-          console.warn(
-            `Warning: Failed to fetch commits from ${repositoryName}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          return [];
-        }
+      // Paginate through search results
+      // Note: Search commits API is available through octokit.rest.search
+      const commits = await this.octokit.paginate(this.octokit.rest.search.commits, {
+        q: searchQuery,
+        sort: 'author-date',
+        order: 'desc',
+        per_page: 100,
       });
 
-      // Execute all repository queries in parallel
-      const results = await Promise.all(repositoryPromises);
+      console.log(`Found ${commits.length} commits across all branches`);
 
-      // Flatten results into single array
-      for (const repoContributions of results) {
-        contributions.push(...repoContributions);
+      // Transform search results to Contribution format
+      for (const commit of commits) {
+        if (!commit.commit?.author?.date) continue;
+
+        const commitMessage = commit.commit.message || '';
+        const firstLine = commitMessage.split('\n')[0];
+
+        // Extract repository name from commit URL or repository object
+        const repository = commit.repository?.full_name;
+
+        contributions.push({
+          type: 'commit',
+          timestamp: commit.commit.author.date,
+          text: firstLine,
+          url: commit.html_url,
+          repository,
+          target: undefined, // Branch info not available from Search API
+        });
       }
 
       console.log(`Total commits found: ${contributions.length}`);
@@ -697,6 +656,10 @@ export class GitHubConnector implements Connector {
           console.warn('Warning: GitHub API authentication failed. Check your token.');
         } else if (status === 403) {
           console.warn('Warning: GitHub API rate limit exceeded or access forbidden.');
+        } else if (status === 422) {
+          console.warn(
+            'Warning: GitHub Search API query validation failed. Check date format and query syntax.',
+          );
         } else {
           console.warn(
             `Warning: Error fetching commits from GitHub API: ${error instanceof Error ? error.message : String(error)}`,

@@ -123,13 +123,13 @@ git-activity-tracer all-commits --format csv
 
 **What commits are shown:**
 
-- **GitHub**: All commits you authored on any branch (main, feature branches, etc.) using the Commits API with full pagination. No longer limited to 300 events or 30 days.
+- **GitHub**: All commits you authored on any branch (including feature branches) using the Search API. This searches across all branches and repositories you have access to, with no 300-event limitation.
 - **GitLab**: All pushed commits from all branches.
 
 **Difference from default report:**
 
 - Default report: Shows commits from base branches (main, master, develop) + PRs + reviews
-- `all-commits`: Shows ALL commits from ALL branches (feature branches included), providing complete commit history
+- `all-commits`: Shows ALL commits from ALL branches (feature branches included), providing complete commit history across all your work
 
 ## Usage Examples
 
