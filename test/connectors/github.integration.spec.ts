@@ -83,7 +83,7 @@ describe.skipIf(!process.env.GH_TOKEN)('GitHub Activity Integration Test', () =>
             console.log(`      Text: ${contribution.text}`);
           }
           if (contribution.url) {
-            console.log(`      URL: ${contribution.url}`);
+            console.log(`      URL: ${contribution.url} `);
           }
         });
       }
