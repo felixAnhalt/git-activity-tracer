@@ -584,19 +584,30 @@ export class GitHubConnector implements Connector {
   }
 
   /**
-   * Fetches all commits from ALL branches using comprehensive 3-phase approach.
+   * Helper to format timestamp for logging.
+   */
+  private formatLogTimestamp(): string {
+    return new Date().toISOString().substring(11, 23); // HH:mm:ss.SSS
+  }
+
+  /**
+   * Fetches all commits from ALL branches using optimized 2-phase approach.
    * Unlike fetchContributions which filters by base branches,
    * this method returns all commits the user authored on any branch.
    *
    * Strategy:
-   * Phase 1: Active branches - query commits from all current branches in repositories
-   * Phase 2: Merged PRs - extract commits from merged pull requests (captures deleted branches)
-   * Phase 3: Events API - fallback for very recent commits not yet indexed
+   * Phase 1: Active branches - query commits from all current branches (parallelized)
+   * Phase 2: Merged PRs - extract commits from merged pull requests (parallelized, captures deleted branches)
+   *
+   * Performance optimizations:
+   * - Parallelized repository processing
+   * - Parallelized branch queries within each repository
+   * - Parallelized PR queries within each repository
+   * - Removed redundant Events API phase
    *
    * This comprehensive approach:
    * - Finds commits on active feature branches
    * - Finds commits from deleted branches via merged PRs
-   * - Captures very recent commits via Events API
    * - No 300 event limit
    * - Full pagination support
    *
@@ -605,6 +616,7 @@ export class GitHubConnector implements Connector {
    * @returns Array of commit contributions from all branches
    */
   async fetchAllCommits(from: Dayjs, to: Dayjs): Promise<Contribution[]> {
+    const startTime = Date.now();
     const login = await this.getUserLogin();
     const contributions: Contribution[] = [];
 
@@ -613,9 +625,11 @@ export class GitHubConnector implements Connector {
       to: to.toISOString(),
     };
 
+    const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
+
     try {
-      // PHASE 1: Active Branches - Query commits from all current branches
-      console.log('Phase 1: Discovering repositories and active branches...');
+      // Discover repositories
+      console.log(`[${this.formatLogTimestamp()}] Discovering repositories...`);
       const contributionsCollection = await this.fetchGraphQLContributions(login, dateRange);
 
       if (contributionsCollection?.commitContributionsByRepository) {
@@ -623,25 +637,49 @@ export class GitHubConnector implements Connector {
           .map((item) => item.repository?.nameWithOwner)
           .filter((name): name is string => !!name);
 
-        console.log(`  Found ${repositories.length} repositories to check`);
+        console.log(
+          `[${this.formatLogTimestamp()}] Found ${repositories.length} repositories to check`,
+        );
 
-        // For each repository, fetch branches and query commits from each
-        for (const repositoryName of repositories) {
+        // Process all repositories in parallel
+        const repositoryPromises = repositories.map(async (repositoryName) => {
           const [owner, repo] = repositoryName.split('/');
-          if (!owner || !repo) continue;
+          if (!owner || !repo) return [];
+
+          const repositoryContributions: Contribution[] = [];
 
           try {
-            // Get all branches in the repository
-            const branches = await this.octokit.paginate(this.octokit.rest.repos.listBranches, {
+            // PHASE 1: Fetch branches and commits in parallel
+            console.log(`[${this.formatLogTimestamp()}] ${repositoryName}: fetching branches...`);
+            const branchesPromise = this.octokit.paginate(this.octokit.rest.repos.listBranches, {
               owner,
               repo,
               per_page: 100,
             });
 
-            console.log(`  ${repositoryName}: checking ${branches.length} branches`);
+            // PHASE 2: Fetch merged PRs in parallel
+            console.log(`[${this.formatLogTimestamp()}] ${repositoryName}: fetching merged PRs...`);
+            const pullRequestsPromise = this.octokit.paginate(this.octokit.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 100,
+            });
 
-            // Query commits from each branch
-            for (const branch of branches) {
+            // Wait for both branches and PRs
+            const [branches, allPullRequests] = await Promise.all([
+              branchesPromise,
+              pullRequestsPromise,
+            ]);
+
+            console.log(
+              `[${this.formatLogTimestamp()}] ${repositoryName}: processing ${branches.length} branches in parallel...`,
+            );
+
+            // Query commits from all branches in parallel
+            const branchCommitPromises = branches.map(async (branch) => {
               try {
                 const branchCommits = await this.octokit.paginate(
                   this.octokit.rest.repos.listCommits,
@@ -656,187 +694,151 @@ export class GitHubConnector implements Connector {
                   },
                 );
 
-                for (const commit of branchCommits) {
-                  if (!commit.commit?.author?.date) continue;
-
-                  const commitMessage = commit.commit.message || '';
-                  const firstLine = commitMessage.split('\n')[0];
-
-                  contributions.push({
-                    type: 'commit',
-                    timestamp: commit.commit.author.date,
-                    text: firstLine,
-                    url: commit.html_url,
-                    repository: repositoryName,
-                    target: branch.name,
-                  });
-                }
-              } catch (branchError) {
-                // Branch might be inaccessible, skip it
-                continue;
-              }
-            }
-
-            // PHASE 2: Merged PRs - Extract commits from merged pull requests
-            // This captures commits from deleted feature branches
-            console.log(`  ${repositoryName}: checking merged PRs for deleted branch commits...`);
-
-            try {
-              // Query merged PRs by the user in the date range
-              const mergedPullRequests = await this.octokit.paginate(this.octokit.rest.pulls.list, {
-                owner,
-                repo,
-                state: 'closed',
-                sort: 'updated',
-                direction: 'desc',
-                per_page: 100,
-              });
-
-              // Filter to only merged PRs by the authenticated user in date range
-              const userMergedPRs = mergedPullRequests.filter((pullRequest) => {
-                if (!pullRequest.merged_at) return false;
-                if (pullRequest.user?.login !== login) return false;
-
-                const mergedTimestamp = Date.parse(pullRequest.merged_at);
-                const fromTimestamp = Date.parse(dateRange.from);
-                const toTimestamp = Date.parse(dateRange.to);
-
-                // Include PR if it was merged in date range OR if it contains commits in date range
-                return mergedTimestamp >= fromTimestamp && mergedTimestamp <= toTimestamp;
-              });
-
-              console.log(`    Found ${userMergedPRs.length} merged PRs by ${login} in date range`);
-
-              // For each merged PR, get its commits
-              for (const pullRequest of userMergedPRs) {
-                try {
-                  const pullRequestCommits = await this.octokit.paginate(
-                    this.octokit.rest.pulls.listCommits,
-                    {
-                      owner,
-                      repo,
-                      pull_number: pullRequest.number,
-                      per_page: 100,
-                    },
-                  );
-
-                  // Extract the head branch name from the PR
-                  const headBranch = pullRequest.head?.ref;
-
-                  for (const commit of pullRequestCommits) {
-                    if (!commit.commit?.author?.date) continue;
-
-                    // Only include commits by the authenticated user
-                    if (commit.author?.login !== login && commit.committer?.login !== login) {
-                      continue;
-                    }
-
-                    // Check if commit is in date range
-                    const commitTimestamp = Date.parse(commit.commit.author.date);
-                    const fromTimestamp = Date.parse(dateRange.from);
-                    const toTimestamp = Date.parse(dateRange.to);
-
-                    if (commitTimestamp < fromTimestamp || commitTimestamp > toTimestamp) {
-                      continue;
-                    }
+                return branchCommits
+                  .map((commit): Contribution | null => {
+                    if (!commit.commit?.author?.date) return null;
 
                     const commitMessage = commit.commit.message || '';
                     const firstLine = commitMessage.split('\n')[0];
 
-                    contributions.push({
+                    return {
                       type: 'commit',
                       timestamp: commit.commit.author.date,
                       text: firstLine,
                       url: commit.html_url,
                       repository: repositoryName,
-                      target: headBranch, // Use the PR's head branch name
-                    });
-                  }
-                } catch (pullRequestError) {
-                  // PR might be inaccessible, skip it
-                  continue;
-                }
+                      target: branch.name,
+                    };
+                  })
+                  .filter((item): item is Contribution => item !== null);
+              } catch (branchError) {
+                // Branch might be inaccessible, skip it
+                return [];
               }
-            } catch (error) {
-              console.warn(
-                `  Warning: Failed to fetch merged PRs from ${repositoryName}: ${error instanceof Error ? error.message : String(error)}`,
+            });
+
+            const branchResults = await Promise.all(branchCommitPromises);
+            const branchContributions = branchResults.flat();
+
+            repositoryContributions.push(...branchContributions);
+            console.log(
+              `[${this.formatLogTimestamp()}] ${repositoryName}: found ${branchContributions.length} commits from active branches`,
+            );
+
+            // Filter to only merged PRs by the authenticated user in date range
+            const userMergedPRs = allPullRequests.filter((pullRequest) => {
+              if (!pullRequest.merged_at) return false;
+              if (pullRequest.user?.login !== login) return false;
+
+              const mergedTimestamp = Date.parse(pullRequest.merged_at);
+
+              return (
+                mergedTimestamp >= dateRangeTimestamps.fromTimestamp &&
+                mergedTimestamp <= dateRangeTimestamps.toTimestamp
               );
-            }
+            });
+
+            console.log(
+              `[${this.formatLogTimestamp()}] ${repositoryName}: processing ${userMergedPRs.length} merged PRs in parallel...`,
+            );
+
+            // Process all PRs in parallel
+            const pullRequestCommitPromises = userMergedPRs.map(async (pullRequest) => {
+              try {
+                const pullRequestCommits = await this.octokit.paginate(
+                  this.octokit.rest.pulls.listCommits,
+                  {
+                    owner,
+                    repo,
+                    pull_number: pullRequest.number,
+                    per_page: 100,
+                  },
+                );
+
+                const headBranch = pullRequest.head?.ref;
+
+                return pullRequestCommits
+                  .map((commit): Contribution | null => {
+                    if (!commit.commit?.author?.date) return null;
+
+                    // Only include commits by the authenticated user
+                    if (commit.author?.login !== login && commit.committer?.login !== login) {
+                      return null;
+                    }
+
+                    // Check if commit is in date range
+                    const commitTimestamp = Date.parse(commit.commit.author.date);
+
+                    if (
+                      commitTimestamp < dateRangeTimestamps.fromTimestamp ||
+                      commitTimestamp > dateRangeTimestamps.toTimestamp
+                    ) {
+                      return null;
+                    }
+
+                    const commitMessage = commit.commit.message || '';
+                    const firstLine = commitMessage.split('\n')[0];
+
+                    return {
+                      type: 'commit',
+                      timestamp: commit.commit.author.date,
+                      text: firstLine,
+                      url: commit.html_url,
+                      repository: repositoryName,
+                      target: headBranch,
+                    };
+                  })
+                  .filter((item): item is Contribution => item !== null);
+              } catch (pullRequestError) {
+                // PR might be inaccessible, skip it
+                return [];
+              }
+            });
+
+            const pullRequestResults = await Promise.all(pullRequestCommitPromises);
+            const pullRequestContributions = pullRequestResults.flat();
+
+            repositoryContributions.push(...pullRequestContributions);
+            console.log(
+              `[${this.formatLogTimestamp()}] ${repositoryName}: found ${pullRequestContributions.length} commits from merged PRs`,
+            );
           } catch (error) {
             console.warn(
-              `  Warning: Failed to fetch branches from ${repositoryName}: ${error instanceof Error ? error.message : String(error)}`,
+              `[${this.formatLogTimestamp()}] Warning: Failed to process ${repositoryName}: ${error instanceof Error ? error.message : String(error)}`,
             );
           }
-        }
+
+          return repositoryContributions;
+        });
+
+        // Wait for all repositories to complete
+        const allRepositoryResults = await Promise.all(repositoryPromises);
+        contributions.push(...allRepositoryResults.flat());
       }
 
-      // PHASE 3: Events API - Fallback for very recent commits
-      console.log('Phase 3: Checking Events API for recent activity...');
-      try {
-        const events = await this.fetchEventsApiData(login);
-        console.log(`  Found ${events.length} recent events`);
-
-        const dateRangeTimestamps = this.parseDateRangeTimestamps(dateRange);
-
-        for (const event of events) {
-          if (event.type !== 'PushEvent') continue;
-
-          const payload = event.payload as GitHubEventPayload;
-          if (!payload.commits || !Array.isArray(payload.commits)) continue;
-
-          const repositoryName = event.repo?.name;
-          const branch = payload.ref?.replace('refs/heads/', '');
-
-          for (const commit of payload.commits) {
-            // Only include commits by the authenticated user
-            if (commit.author?.name !== login && commit.author?.email !== login) {
-              continue;
-            }
-
-            // Events API doesn't provide commit timestamps, use event created_at as approximation
-            const timestamp = event.created_at;
-            if (!timestamp) continue;
-
-            const eventTimestamp = Date.parse(timestamp);
-            if (
-              eventTimestamp < dateRangeTimestamps.fromTimestamp ||
-              eventTimestamp > dateRangeTimestamps.toTimestamp
-            ) {
-              continue;
-            }
-
-            contributions.push({
-              type: 'commit',
-              timestamp,
-              text: commit.message,
-              url: `https://github.com/${repositoryName}/commit/${commit.sha}`,
-              repository: repositoryName,
-              target: branch,
-            });
-          }
-        }
-      } catch (error) {
-        console.warn(
-          `Warning: Events API failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-
-      console.log(`Total commits collected: ${contributions.length}`);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      console.log(
+        `[${this.formatLogTimestamp()}] Total commits collected: ${contributions.length} (took ${duration}s)`,
+      );
     } catch (error) {
       if (error && typeof error === 'object' && 'status' in error) {
         const status = (error as { status: number }).status;
         if (status === 401) {
-          console.warn('Warning: GitHub API authentication failed. Check your token.');
+          console.warn(
+            `[${this.formatLogTimestamp()}] Warning: GitHub API authentication failed. Check your token.`,
+          );
         } else if (status === 403) {
-          console.warn('Warning: GitHub API rate limit exceeded or access forbidden.');
+          console.warn(
+            `[${this.formatLogTimestamp()}] Warning: GitHub API rate limit exceeded or access forbidden.`,
+          );
         } else {
           console.warn(
-            `Warning: Error fetching commits from GitHub API: ${error instanceof Error ? error.message : String(error)}`,
+            `[${this.formatLogTimestamp()}] Warning: Error fetching commits from GitHub API: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       } else {
         console.warn(
-          `Warning: Error fetching commits from GitHub API: ${error instanceof Error ? error.message : String(error)}`,
+          `[${this.formatLogTimestamp()}] Warning: Error fetching commits from GitHub API: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
