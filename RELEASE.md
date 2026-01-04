@@ -153,77 +153,9 @@ The GitHub Action (`.github/workflows/release.yml`) will:
 
 ---
 
-## First Release Setup
+## First Release or Manual Release
 
-### One-Time Configuration
-
-1. **Create npm account**: https://www.npmjs.com/signup
-
-2. **Generate npm token** (Automation type):
-   - Go to: https://www.npmjs.com/settings/YOUR_USERNAME/tokens
-   - Click "Generate New Token" → "Automation"
-   - Copy the token
-
-3. **Add npm token to GitHub**:
-   - Go to: https://github.com/felixAnhalt/git-activity-tracer/settings/secrets/actions
-   - Click "New repository secret"
-   - Name: `NPM_TOKEN`
-   - Value: Paste your npm token
-   - Click "Add secret"
-
-4. **Make your first release**:
-
-   ```bash
-   git commit -m "feat: initial release
-
-   - Multi-platform support (GitHub, GitLab)
-   - Multiple output formats (console, JSON, CSV)
-   - Project ID mapping for time tracking"
-
-   git push origin main
-   ```
-
-5. **Watch the magic happen**:
-   - Go to: https://github.com/felixAnhalt/git-activity-tracer/actions
-   - Watch the "Release" workflow run
-   - Check the new release and npm publish
-
----
-
-## Troubleshooting
-
-### No Release Created
-
-**Cause**: No commits with `feat:` or `fix:` since last release.
-
-**Solution**: Make sure at least one commit uses a release-triggering type.
-
-### npm Publish Failed
-
-**Cause**: `NPM_TOKEN` not configured or invalid.
-
-**Solution**:
-
-1. Generate a new Automation token from npm
-2. Update the GitHub secret
-
-### Build Failed
-
-**Cause**: Tests or linting errors.
-
-**Solution**: Fix the errors before pushing:
-
-```bash
-pnpm test
-pnpm run lint
-pnpm run build
-```
-
----
-
-## Manual Release (Emergency)
-
-If automated release fails, you can release manually:
+If automated release fails or you need the first release, you can release manually:
 
 ```bash
 npm login
