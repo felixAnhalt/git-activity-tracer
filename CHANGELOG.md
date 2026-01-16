@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/felixAnhalt/git-activity-tracer/compare/v1.0.2...v1.0.3) (2026-01-16)
+
+
+### Bug Fixes
+
+* **parser:** update action callback to capture arguments in CLI ([6023a09](https://github.com/felixAnhalt/git-activity-tracer/commit/6023a09d9a49db6e7e3a3db73f7c28857c182a2e))
+
 ## [1.0.2](https://github.com/felixAnhalt/git-activity-tracer/compare/v1.0.1...v1.0.2) (2025-12-21)
 
 
